@@ -1,0 +1,25 @@
+Date,Product,Category,Quantity,Price,Payment_Method
+2026-01-01,Shampoo,Beauty,3,8.99,Card
+2026-01-02,Hair Oil,Beauty,2,12.50,Cash
+2026-01-03,Face Cream,Skincare,4,15.00,Card
+2026-01-04,Perfume,Fragrance,1,25.00,Card
+2026-01-05,Shampoo,Beauty,5,8.99,Cash
+2026-01-06,Body Lotion,Skincare,2,10.00,Card
+2026-01-07,Face Wash,Skincare,3,9.50,Cash
+2026-01-08,Perfume,Fragrance,2,25.00,Card
+
+2026-02-01,Face Cream,Skincare,2,15.00,Card
+2026-02-02,Hair Oil,Beauty,3,12.50,Cash
+2026-02-03,Perfume,Fragrance,3,25.00,Cash
+2026-02-04,Shampoo,Beauty,4,8.99,Card
+2026-02-05,Body Lotion,Skincare,3,10.00,Card
+2026-02-06,Face Wash,Skincare,2,9.50,Cash
+2026-02-07,Perfume,Fragrance,1,25.00,Card
+
+2026-03-01,Shampoo,Beauty,6,8.99,Card
+2026-03-02,Face Cream,Skincare,3,15.00,Cash
+2026-03-03,Hair Oil,Beauty,5,12.50,Card
+2026-03-04,Perfume,Fragrance,2,25.00,Card
+2026-03-05,Body Lotion,Skincare,4,10.00,Cash
+2026-03-06,Face Wash,Skincare,3,9.50,Card
+2026-03-07,Perfume,Fragrance,2,25.00,Cash
