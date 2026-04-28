@@ -278,20 +278,60 @@ try:
     else:
         df = pd.read_csv("sample_sales.csv")
 
+    # Standard column names
     required_columns = ["Date", "Product", "Category", "Quantity", "Price"]
-    missing = [col for col in required_columns if col not in df.columns]
+
+    # Possible column name variations
+    column_mapping = {
+        "date": ["date", "order date", "invoice date", "transaction date"],
+        "product": ["product", "item", "product name", "description"],
+        "category": ["category", "type", "department"],
+        "quantity": ["quantity", "qty", "units", "items sold"],
+        "price": ["price", "sales", "amount", "revenue", "total", "total sales"]
+    }
+
+    # Normalise column names
+    df.columns = df.columns.str.lower().str.strip()
+
+    mapped_columns = {}
+
+    for standard, variations in column_mapping.items():
+        for col in df.columns:
+            if col in variations:
+                mapped_columns[standard.capitalize()] = col
+                break
+
+    # Check missing required columns
+    missing = [col for col in required_columns if col not in mapped_columns]
 
     if missing:
         st.error(f"Missing required columns: {', '.join(missing)}")
+        st.write("Detected columns in your file:")
+        st.write(list(df.columns))
         st.stop()
+
+    # Rename columns to standard names
+    df = df.rename(columns={
+        mapped_columns["Date"]: "Date",
+        mapped_columns["Product"]: "Product",
+        mapped_columns["Category"]: "Category",
+        mapped_columns["Quantity"]: "Quantity",
+        mapped_columns["Price"]: "Price"
+    })
 
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce")
     df["Price"] = pd.to_numeric(df["Price"], errors="coerce")
+
     df = df.dropna(subset=["Date", "Quantity", "Price"])
 
-except Exception:
+    if df.empty:
+        st.error("No valid data found. Please check your file.")
+        st.stop()
+
+except Exception as e:
     st.error("Error loading file. Please check your file format.")
+    st.caption(str(e))
     st.stop()
 
 
