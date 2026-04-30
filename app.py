@@ -2,6 +2,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from openai import OpenAI
+from difflib import get_close_matches
 
 
 st.set_page_config(
@@ -16,7 +17,6 @@ st.set_page_config(
 
 api_key = st.secrets.get("OPENAI_API_KEY", None)
 
-# For local testing only. Replace with your real key if you are not using secrets yet.
 if api_key is None:
     api_key = "YOUR_API_KEY_HERE"
 
@@ -111,6 +111,7 @@ section[data-testid="stSidebar"] * {
     text-align: center;
     padding: 32px;
     background: #fbfaff;
+    margin-bottom: 15px;
 }
 
 .pill {
@@ -130,6 +131,7 @@ section[data-testid="stSidebar"] * {
     color: white;
     min-height: 152px;
     box-shadow: 0 15px 30px rgba(0,0,0,0.14);
+    margin-bottom: 22px;
 }
 
 .metric-title {
@@ -150,15 +152,6 @@ section[data-testid="stSidebar"] * {
     opacity: 0.95;
 }
 
-.card {
-    background: white;
-    padding: 24px;
-    border-radius: 22px;
-    border: 1px solid #e5e7eb;
-    box-shadow: 0 12px 30px rgba(15,23,42,0.07);
-    margin-bottom: 22px;
-}
-
 .insight {
     padding: 15px;
     border-radius: 14px;
@@ -173,15 +166,6 @@ section[data-testid="stSidebar"] * {
     border: 1px solid #bbf7d0;
     box-shadow: 0 12px 30px rgba(16,185,129,0.12);
     margin-bottom: 24px;
-}
-
-.ai-box {
-    background: white;
-    padding: 26px;
-    border-radius: 22px;
-    border: 1px solid #c4b5fd;
-    box-shadow: 0 12px 30px rgba(124,58,237,0.10);
-    margin-bottom: 20px;
 }
 
 .ai-response {
@@ -200,12 +184,69 @@ section[data-testid="stSidebar"] * {
     text-align: center;
     color: #1d4ed8;
     font-weight: 700;
+    margin-top: 20px;
+    margin-bottom: 20px;
 }
+
+/* =========================
+   FIX DOUBLE WORDING ISSUE
+   ========================= */
+
+.stButton button::before,
+.stButton button::after,
+section[data-testid="stFileUploader"] button::before,
+section[data-testid="stFileUploader"] button::after,
+div[data-testid="stExpander"] summary::before,
+div[data-testid="stExpander"] summary::after {
+    content: none !important;
+    display: none !important;
+}
+
+section[data-testid="stFileUploader"] {
+    background: #f8fafc;
+    border-radius: 14px;
+    padding: 12px;
+}
+
+section[data-testid="stFileUploader"] label {
+    display: none !important;
+}
+
+section[data-testid="stFileUploader"] button {
+    color: #111827 !important;
+    background: white !important;
+    border: 1px solid #d1d5db !important;
+    border-radius: 10px !important;
+    font-size: 16px !important;
+    font-weight: 600 !important;
+}
+
+section[data-testid="stFileUploader"] button * {
+    color: #111827 !important;
+}
+
+div[data-testid="stExpander"] summary {
+    font-size: 18px !important;
+    font-weight: 700 !important;
+    color: #111827 !important;
+    background: white !important;
+    border-radius: 12px !important;
+    border: 1px solid #d1d5db !important;
+    padding: 14px !important;
+}
+
+div[data-testid="stExpander"] summary * {
+    color: #111827 !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
 
 
-# Sidebar
+# =========================
+# SIDEBAR
+# =========================
+
 with st.sidebar:
     st.markdown('<div class="sidebar-logo">Sales<br>Intelligence</div>', unsafe_allow_html=True)
     st.markdown('<div class="nav-item nav-active">Dashboard</div>', unsafe_allow_html=True)
@@ -215,11 +256,17 @@ with st.sidebar:
     st.markdown('<div class="nav-item">Report</div>', unsafe_allow_html=True)
     st.markdown('<div class="nav-item">Upload Data</div>', unsafe_allow_html=True)
     st.markdown("<br><br><br>", unsafe_allow_html=True)
-    st.markdown('<div class="nav-item nav-active">AI Business Assistant<br><small>Ask anything about your business data.</small></div>', unsafe_allow_html=True)
+    st.markdown(
+        '<div class="nav-item nav-active">AI Business Assistant<br><small>Ask anything about your business data.</small></div>',
+        unsafe_allow_html=True
+    )
     st.markdown("<br><br><small>© 2026 Sales Intelligence<br>All rights reserved.</small>", unsafe_allow_html=True)
 
 
-# Header
+# =========================
+# HEADER
+# =========================
+
 st.markdown("""
 <div style="color:#5b21b6;font-weight:800;">Welcome back!</div>
 <div class="hero">
@@ -232,7 +279,10 @@ st.markdown("""
 """, unsafe_allow_html=True)
 
 
-# Upload panel
+# =========================
+# UPLOAD PANEL
+# =========================
+
 st.markdown('<div class="upload-panel">', unsafe_allow_html=True)
 u1, u2 = st.columns([1, 1])
 
@@ -241,7 +291,7 @@ with u1:
     <div class="upload-inner">
         <div style="font-size:46px;color:#6d28d9;">⇧</div>
         <h3 style="margin-bottom:5px;">Upload your sales data</h3>
-        <p>Drag & drop your file here or</p>
+        <p>Drag & drop your file here or use the upload button below</p>
     </div>
     """, unsafe_allow_html=True)
 
@@ -259,16 +309,18 @@ with u2:
     <span class="pill">Category</span>
     <span class="pill">Quantity</span>
     <span class="pill">Price</span>
-    <span class="pill">Payment_Method</span>
     <br><br>
     <h3 style="color:#5b21b6;">Important</h3>
-    <p>Use date format YYYY-MM-DD.<br>Quantity and Price must be numeric.</p>
+    <p>The app accepts many column name variations automatically.</p>
     """, unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
 
 
-# Load data
+# =========================
+# LOAD DATA
+# =========================
+
 try:
     if uploaded_file is not None:
         if uploaded_file.name.endswith(".csv"):
@@ -278,35 +330,18 @@ try:
     else:
         df = pd.read_csv("sample_sales.csv")
 
-    # Clean column names
     original_columns = list(df.columns)
     clean_columns = [str(col).lower().strip().replace("_", " ") for col in original_columns]
-
     column_lookup = dict(zip(clean_columns, original_columns))
 
     required_columns = ["Date", "Product", "Category", "Quantity", "Price"]
 
     column_mapping = {
-        "Date": [
-            "date", "order date", "invoice date", "transaction date", "sale date",
-            "created date", "purchase date", "day"
-        ],
-        "Product": [
-            "product", "item", "product name", "item name", "description",
-            "pizza type", "service", "menu item", "sku", "stock item"
-        ],
-        "Category": [
-            "category", "type", "department", "branch", "location", "store",
-            "section", "group", "class", "product category"
-        ],
-        "Quantity": [
-            "quantity", "qty", "units", "items sold", "number sold",
-            "order quantity", "sold quantity", "count"
-        ],
-        "Price": [
-            "price", "sales", "amount", "revenue", "total", "total sales",
-            "sale amount", "order value", "value", "cost", "unit price"
-        ]
+        "Date": ["date", "order date", "invoice date", "transaction date", "sale date"],
+        "Product": ["product", "item", "product name", "item name", "description", "pizza type", "service", "menu item", "sku", "stock item"],
+        "Category": ["category", "type", "department", "branch", "location", "store", "section", "group", "class", "product category"],
+        "Quantity": ["quantity", "qty", "units", "items sold", "number sold", "order quantity", "sold quantity", "count"],
+        "Price": ["price", "sales", "amount", "revenue", "total", "total sales", "sale amount", "order value", "value", "cost", "unit price"]
     }
 
     detected_columns = {}
@@ -314,20 +349,17 @@ try:
     for standard_col, possible_names in column_mapping.items():
         match_found = None
 
-        # 1. Exact match
         for name in possible_names:
             if name in clean_columns:
                 match_found = name
                 break
 
-        # 2. Contains match
         if match_found is None:
             for col in clean_columns:
                 if any(name in col or col in name for name in possible_names):
                     match_found = col
                     break
 
-        # 3. Fuzzy match
         if match_found is None:
             fuzzy_match = get_close_matches(
                 standard_col.lower(),
@@ -347,14 +379,8 @@ try:
         st.error(f"Missing required columns: {', '.join(missing)}")
         st.write("Detected columns in your file:")
         st.write(original_columns)
-
-        st.warning(
-            "Your file uploaded successfully, but the app could not understand some column names. "
-            "Please rename your columns or add these names to the mapping."
-        )
         st.stop()
 
-    # Rename detected columns to standard names
     df = df.rename(columns={
         detected_columns["Date"]: "Date",
         detected_columns["Product"]: "Product",
@@ -363,15 +389,12 @@ try:
         detected_columns["Price"]: "Price"
     })
 
-    # Keep only useful columns if duplicates exist
     df = df.loc[:, ~df.columns.duplicated()]
 
-    # Convert data types
-    df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
+    df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce")
     df["Price"] = pd.to_numeric(df["Price"], errors="coerce")
 
-    # Remove invalid rows
     df = df.dropna(subset=["Date", "Quantity", "Price"])
 
     if df.empty:
@@ -386,22 +409,31 @@ except Exception as e:
     st.stop()
 
 
-# Calculations
+# =========================
+# CALCULATIONS
+# =========================
+
+df["Product"] = df["Product"].astype(str)
+df["Category"] = df["Category"].astype(str)
+df["Month"] = df["Date"].dt.to_period("M").dt.to_timestamp()
 df["Total_Sales"] = df["Quantity"] * df["Price"]
-df["Month"] = df["Date"].dt.to_period("M").astype(str)
 
 total_revenue = df["Total_Sales"].sum()
 total_orders = len(df)
 avg_order_value = df["Total_Sales"].mean()
+
 best_product = df.groupby("Product")["Total_Sales"].sum().idxmax()
 top_category = df.groupby("Category")["Total_Sales"].sum().idxmax()
 lowest_product = df.groupby("Product")["Total_Sales"].sum().idxmin()
 
-monthly_sales = df.groupby("Month")["Total_Sales"].sum()
+monthly_sales = df.groupby("Month")["Total_Sales"].sum().sort_index()
+
 growth = None
 
 if len(monthly_sales) > 1 and monthly_sales.iloc[-2] != 0:
     growth = ((monthly_sales.iloc[-1] - monthly_sales.iloc[-2]) / monthly_sales.iloc[-2]) * 100
+
+growth_text = f"{growth:.1f}% vs last month" if growth is not None else "Monthly trend available"
 
 
 def metric(title, value, sub, gradient):
@@ -414,86 +446,112 @@ def metric(title, value, sub, gradient):
     """, unsafe_allow_html=True)
 
 
-# KPI Cards
+# =========================
+# KPI CARDS
+# =========================
+
 c1, c2, c3, c4 = st.columns(4)
 
 with c1:
-    metric("Total Revenue", f"£{total_revenue:,.2f}", "12.5% vs last month", "linear-gradient(135deg,#7c3aed,#4f46e5)")
+    metric("Total Revenue", f"£{total_revenue:,.2f}", growth_text, "linear-gradient(135deg,#7c3aed,#4f46e5)")
+
 with c2:
-    metric("Total Orders", total_orders, "10.0% vs last month", "linear-gradient(135deg,#0ea5e9,#2563eb)")
+    metric("Total Orders", f"{total_orders:,}", "Total completed records", "linear-gradient(135deg,#0ea5e9,#2563eb)")
+
 with c3:
-    metric("Average Order Value", f"£{avg_order_value:,.2f}", "2.3% vs last month", "linear-gradient(135deg,#34d399,#059669)")
+    metric("Average Order Value", f"£{avg_order_value:,.2f}", "Average revenue per order", "linear-gradient(135deg,#34d399,#059669)")
+
 with c4:
     metric("Best Product", best_product, "Top performing product", "linear-gradient(135deg,#f59e0b,#f97316)")
 
 
-# Charts
+# =========================
+# CHARTS
+# =========================
+
 left, right = st.columns(2)
 
 with left:
-    with st.container():
-        st.markdown('<div class="card">', unsafe_allow_html=True)
-        st.markdown("### Sales Performance Over Time")
+    st.markdown("### Sales Performance Over Time")
 
-        monthly_chart = df.groupby("Month")["Total_Sales"].sum().reset_index()
+    monthly_chart = (
+        df.groupby("Month", as_index=False)["Total_Sales"]
+        .sum()
+        .sort_values("Month")
+    )
 
-        fig = px.line(
-            monthly_chart,
-            x="Month",
-            y="Total_Sales",
-            markers=True,
-            color_discrete_sequence=["#6d28d9"]
-        )
-        fig.update_traces(line=dict(width=4), marker=dict(size=9))
-        fig.update_layout(
-            height=360,
-            margin=dict(l=20, r=20, t=20, b=20),
-            plot_bgcolor="white",
-            paper_bgcolor="white",
-            xaxis_title="",
-            yaxis_title="Revenue"
-        )
-        st.plotly_chart(fig, use_container_width=True)
-        st.markdown('</div>', unsafe_allow_html=True)
+    fig = px.line(
+        monthly_chart,
+        x="Month",
+        y="Total_Sales",
+        markers=True
+    )
+
+    fig.update_traces(
+        line=dict(width=4, color="#6d28d9"),
+        marker=dict(size=9, color="#6d28d9")
+    )
+
+    fig.update_layout(
+        height=420,
+        template="plotly_white",
+        margin=dict(l=40, r=20, t=20, b=40),
+        xaxis_title="Month",
+        yaxis_title="Revenue (£)",
+        showlegend=False,
+        hovermode="x unified"
+    )
+
+    fig.update_xaxes(tickformat="%b %Y", showgrid=False)
+    fig.update_yaxes(tickprefix="£", separatethousands=True, showgrid=True)
+
+    st.plotly_chart(fig, use_container_width=True)
+
 
 with right:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
-    st.markdown("### Product Revenue Ranking")
+    st.markdown("### Top 10 Products by Revenue")
 
     product_sales = (
-        df.groupby("Product")["Total_Sales"]
+        df.groupby("Product", as_index=False)["Total_Sales"]
         .sum()
-        .sort_values(ascending=False)
-        .reset_index()
+        .sort_values("Total_Sales", ascending=False)
+        .head(10)
     )
 
     fig = px.bar(
         product_sales,
-        x="Product",
-        y="Total_Sales",
-        color="Total_Sales",
-        color_continuous_scale=["#2563eb", "#38bdf8"]
+        x="Total_Sales",
+        y="Product",
+        orientation="h"
     )
-    fig.update_layout(
-        height=360,
-        margin=dict(l=20, r=20, t=20, b=20),
-        plot_bgcolor="white",
-        paper_bgcolor="white",
-        showlegend=False,
-        xaxis_title="",
-        yaxis_title="Revenue"
-    )
-    st.plotly_chart(fig, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
 
+    fig.update_traces(marker_color="#2563eb")
+
+    fig.update_layout(
+        height=420,
+        template="plotly_white",
+        margin=dict(l=20, r=20, t=20, b=40),
+        xaxis_title="Revenue (£)",
+        yaxis_title="",
+        showlegend=False
+    )
+
+    fig.update_yaxes(autorange="reversed")
+    fig.update_xaxes(tickprefix="£", separatethousands=True)
+
+    st.plotly_chart(fig, use_container_width=True)
+
+
+# =========================
+# BOTTOM SECTION
+# =========================
 
 bottom_left, bottom_right = st.columns(2)
 
 with bottom_left:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown("### Revenue by Category")
 
-    category_sales = df.groupby("Category")["Total_Sales"].sum().reset_index()
+    category_sales = df.groupby("Category", as_index=False)["Total_Sales"].sum()
 
     fig = px.pie(
         category_sales,
@@ -502,16 +560,17 @@ with bottom_left:
         hole=0.50,
         color_discrete_sequence=["#7c3aed", "#0ea5e9", "#10b981", "#f59e0b"]
     )
+
     fig.update_layout(
-        height=360,
+        height=420,
         margin=dict(l=20, r=20, t=20, b=20),
         paper_bgcolor="white"
     )
+
     st.plotly_chart(fig, use_container_width=True)
-    st.markdown('</div>', unsafe_allow_html=True)
+
 
 with bottom_right:
-    st.markdown('<div class="card">', unsafe_allow_html=True)
     st.markdown("### Business Insights")
 
     st.markdown(f"""
@@ -532,17 +591,18 @@ with bottom_right:
 
     <div class="insight" style="background:#eff6ff;border-color:#bfdbfe;">
         <strong style="color:#2563eb;">Sales Growth</strong><br>
-        Sales trend is being monitored from your monthly data.
+        {growth_text}
     </div>
     """, unsafe_allow_html=True)
 
-    st.markdown('</div>', unsafe_allow_html=True)
 
+# =========================
+# RECOMMENDATION
+# =========================
 
-# Recommendation
 recommendation = (
-    f"Your recent sales trend is positive. Consider increasing stock for high-performing products "
-    f"and promoting your strongest category, {top_category}, further to maximise growth."
+    f"Consider increasing stock or marketing for high-performing products such as {best_product}. "
+    f"Your strongest category is {top_category}, so this area may offer the best opportunity for growth."
 )
 
 st.markdown(f"""
@@ -553,8 +613,10 @@ st.markdown(f"""
 """, unsafe_allow_html=True)
 
 
-# AI Assistant
-st.markdown('<div class="ai-box">', unsafe_allow_html=True)
+# =========================
+# AI ASSISTANT
+# =========================
+
 st.markdown("## AI Business Assistant")
 st.markdown("Ask a question about your business data")
 
@@ -574,6 +636,7 @@ if ask_clicked and user_question:
     Best Product: {best_product}
     Top Category: {top_category}
     Lowest Product: {lowest_product}
+    Sales Growth: {growth_text}
     Recommendation: {recommendation}
     """
 
@@ -596,6 +659,7 @@ if ask_clicked and user_question:
                 messages=[{"role": "user", "content": prompt}],
                 temperature=0.4
             )
+
             answer = response.choices[0].message.content
 
         st.markdown(f"""
@@ -609,8 +673,10 @@ if ask_clicked and user_question:
         st.error("AI service error. Please check your OpenAI API key or billing.")
         st.caption(str(e))
 
-st.markdown('</div>', unsafe_allow_html=True)
 
+# =========================
+# FOOTER + DATA PREVIEW
+# =========================
 
 st.markdown("""
 <div class="tip">
