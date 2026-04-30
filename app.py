@@ -274,60 +274,111 @@ try:
         if uploaded_file.name.endswith(".csv"):
             df = pd.read_csv(uploaded_file)
         else:
-            df = pd.read_excel(uploaded_file)
+            df = pd.read_excel(uploaded_file, engine="openpyxl")
     else:
         df = pd.read_csv("sample_sales.csv")
 
-    # Standard column names
+    # Clean column names
+    original_columns = list(df.columns)
+    clean_columns = [str(col).lower().strip().replace("_", " ") for col in original_columns]
+
+    column_lookup = dict(zip(clean_columns, original_columns))
+
     required_columns = ["Date", "Product", "Category", "Quantity", "Price"]
 
-    # Possible column name variations
     column_mapping = {
-        "date": ["date", "order date", "invoice date", "transaction date"],
-        "product": ["product", "item", "product name", "description"],
-        "category": ["category", "type", "department"],
-        "quantity": ["quantity", "qty", "units", "items sold"],
-        "price": ["price", "sales", "amount", "revenue", "total", "total sales"]
+        "Date": [
+            "date", "order date", "invoice date", "transaction date", "sale date",
+            "created date", "purchase date", "day"
+        ],
+        "Product": [
+            "product", "item", "product name", "item name", "description",
+            "pizza type", "service", "menu item", "sku", "stock item"
+        ],
+        "Category": [
+            "category", "type", "department", "branch", "location", "store",
+            "section", "group", "class", "product category"
+        ],
+        "Quantity": [
+            "quantity", "qty", "units", "items sold", "number sold",
+            "order quantity", "sold quantity", "count"
+        ],
+        "Price": [
+            "price", "sales", "amount", "revenue", "total", "total sales",
+            "sale amount", "order value", "value", "cost", "unit price"
+        ]
     }
 
-    # Normalise column names
-    df.columns = df.columns.str.lower().str.strip()
+    detected_columns = {}
 
-    mapped_columns = {}
+    for standard_col, possible_names in column_mapping.items():
+        match_found = None
 
-    for standard, variations in column_mapping.items():
-        for col in df.columns:
-            if col in variations:
-                mapped_columns[standard.capitalize()] = col
+        # 1. Exact match
+        for name in possible_names:
+            if name in clean_columns:
+                match_found = name
                 break
 
-    # Check missing required columns
-    missing = [col for col in required_columns if col not in mapped_columns]
+        # 2. Contains match
+        if match_found is None:
+            for col in clean_columns:
+                if any(name in col or col in name for name in possible_names):
+                    match_found = col
+                    break
+
+        # 3. Fuzzy match
+        if match_found is None:
+            fuzzy_match = get_close_matches(
+                standard_col.lower(),
+                clean_columns,
+                n=1,
+                cutoff=0.55
+            )
+            if fuzzy_match:
+                match_found = fuzzy_match[0]
+
+        if match_found:
+            detected_columns[standard_col] = column_lookup[match_found]
+
+    missing = [col for col in required_columns if col not in detected_columns]
 
     if missing:
         st.error(f"Missing required columns: {', '.join(missing)}")
         st.write("Detected columns in your file:")
-        st.write(list(df.columns))
+        st.write(original_columns)
+
+        st.warning(
+            "Your file uploaded successfully, but the app could not understand some column names. "
+            "Please rename your columns or add these names to the mapping."
+        )
         st.stop()
 
-    # Rename columns to standard names
+    # Rename detected columns to standard names
     df = df.rename(columns={
-        mapped_columns["Date"]: "Date",
-        mapped_columns["Product"]: "Product",
-        mapped_columns["Category"]: "Category",
-        mapped_columns["Quantity"]: "Quantity",
-        mapped_columns["Price"]: "Price"
+        detected_columns["Date"]: "Date",
+        detected_columns["Product"]: "Product",
+        detected_columns["Category"]: "Category",
+        detected_columns["Quantity"]: "Quantity",
+        detected_columns["Price"]: "Price"
     })
 
+    # Keep only useful columns if duplicates exist
+    df = df.loc[:, ~df.columns.duplicated()]
+
+    # Convert data types
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce")
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce")
     df["Price"] = pd.to_numeric(df["Price"], errors="coerce")
 
+    # Remove invalid rows
     df = df.dropna(subset=["Date", "Quantity", "Price"])
 
     if df.empty:
-        st.error("No valid data found. Please check your file.")
+        st.error("No valid data found. Please check your Date, Quantity and Price columns.")
         st.stop()
+
+    st.success("File uploaded and columns detected successfully.")
 
 except Exception as e:
     st.error("Error loading file. Please check your file format.")
