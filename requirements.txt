@@ -1,5 +1,5 @@
 streamlit
 pandas
 plotly
-openpyxl
 openai
+openpyxl==3.1.5
