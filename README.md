@@ -1,6 +1,6 @@
 ![Banner](images/banner.png)
 
-# 🚀 AI-Powered Business Growth Platform
+# AI-Powered Business Growth Platform
 
 <p align="center">
 <b>Transform your business data into actionable insights using AI, forecasting, and advanced analytics.</b><br>
@@ -9,11 +9,11 @@ Predict. Optimise. Grow.
 
 ---
 
-## 🌟 Live Application
+## Live Application
 👉 https://ai-business-operations-system-b3maddq62lk7tbtlznjyd3.streamlit.app/
 
 ---
-## 📸 App Preview
+## App Preview
 
 ### Dashboard
 ![Dashboard](images/dashboard.png)
@@ -24,7 +24,7 @@ Predict. Optimise. Grow.
 ### AI Assistant
 ![AI Assistant](images/ai-assistant.png)
 
-## 📌 Overview
+## Overview
 
 The **AI-Powered Business Growth Platform** is a full-stack SaaS-style analytics system designed for small and medium businesses.
 
@@ -40,34 +40,34 @@ It transforms raw sales data into:
 
 ---
 
-## 💡 Key Features
+## Key Features
 
-### 📊 Smart Dashboard
+### Smart Dashboard
 - Revenue, orders, AOV tracking  
 - Product & category performance  
 - Growth detection  
 
-### 📈 Forecasting (ML)
+### Forecasting (ML)
 - Prophet (advanced forecasting)  
 - Linear regression fallback  
 - Future revenue prediction  
 
-### 🧠 AI Business Assistant
+### AI Business Assistant
 - Ask business questions  
 - Get actionable recommendations  
 - Executive summaries  
 
-### 🔍 SHAP Explainability
+### SHAP Explainability
 - Understand **why sales change**  
 - Feature importance analysis  
 - Model transparency  
 
-### 📄 Executive Reporting
+### Executive Reporting
 - CSV downloads  
 - PDF report generation  
 - AI-generated business summaries  
 
-### 🔐 SaaS System
+### SaaS System
 - User login system  
 - Role-based access  
 - Plan-based feature control  
@@ -101,7 +101,7 @@ It transforms raw sales data into:
 
 ---
 
-## 🧠 AI Capabilities
+## AI Capabilities
 
 This platform integrates AI to:
 
@@ -112,7 +112,7 @@ This platform integrates AI to:
 
 ---
 
-## 🧪 Machine Learning Approach
+## Machine Learning Approach
 
 ### Forecasting
 - Time-series modelling using Prophet
@@ -137,40 +137,36 @@ This platform integrates AI to:
 
 ---
 
-## 🚀 Getting Started
+## Getting Started
 
 ### 1. Clone Repository
-```bash
+
 git clone https://github.com/noorsaba5/sales-intelligence-dashboard.git
 cd sales-intelligence-dashboard
-2. Install Dependencies
+### 2. Install Dependencies
 pip install -r requirements.txt
-3. Run App
+### 3. Run App
 streamlit run app.py
-🔑 Environment Variables (Secrets)
 
-Create .streamlit/secrets.toml:
+## Plan	Features
+Starter = Dashboard + reports
+Pro	= Forecasting + AI
+Premium	= SHAP + Advanced analytics
 
-OPENAI_API_KEY = "your_key_here"
 
-[[USERS]]
-username = "client1"
-password = "1234"
-role = "customer"
-plan = "starter"
-💰 SaaS Monetisation Model
-Plan	Features
-Starter	Dashboard + reports
-Pro	+ Forecasting + AI
-Premium	+ SHAP + Advanced analytics
-🔮 Future Improvements
+## 💼 SaaS Features
 
-✨ SHAP deep insights dashboard
-⚙️ Model optimisation & tuning
-📡 Real-time data integration
-☁️ Full cloud SaaS deployment
-💳 Stripe subscription system
-📊 Advanced forecasting (ARIMA, LSTM)
+* 🔐 Secure login system (multi-user support)
+* 💳 Stripe-ready monetisation model
+* 📊 Tier-based feature access (Starter / Pro / Premium)
+* 🤖 AI-powered business insights
+* 📈 Forecasting & predictive analytics
+* 📄 Automated report generation
 
-👤 Author
-<p align="center"> <b>Noor Saba</b><br> Aspiring Data Scientist | AI & Machine Learning | SaaS Builder </p>
+
+## 👤 Author
+
+<p align="center">
+<b>Noor Saba</b><br>
+Aspiring Data Scientist | AI & Machine Learning
+</p>
