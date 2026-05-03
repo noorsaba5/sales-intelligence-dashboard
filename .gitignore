@@ -9,3 +9,5 @@ __pycache__/
 # OS / editors
 .DS_Store
 .vscode/
+user_data/
+system_data/

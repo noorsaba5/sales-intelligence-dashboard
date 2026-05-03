@@ -13,6 +13,16 @@ Predict. Optimise. Grow.
 👉 https://ai-business-operations-system-b3maddq62lk7tbtlznjyd3.streamlit.app/
 
 ---
+## 📸 App Preview
+
+### Dashboard
+![Dashboard](images/dashboard.png)
+
+### Forecasting
+![Forecasting](images/forecasting.png)
+
+### AI Assistant
+![AI Assistant](images/ai-assistant.png)
 
 ## 📌 Overview
 

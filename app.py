@@ -111,11 +111,12 @@ def upgrade_button(plan_name):
 
 
 # =========================
+# =========================
 # LANDING PAGE + LOGIN
 # =========================
 
 def landing_page():
-    st.markdown(f"# 🚀 {APP_NAME}")
+    st.markdown(f"#  {APP_NAME}")
     st.markdown(
         "A SaaS-style analytics platform that helps small businesses turn sales data "
         "into KPIs, forecasts, growth opportunities, AI recommendations and executive reports."
@@ -128,49 +129,54 @@ def landing_page():
     with p1:
         st.markdown("#### Starter")
         st.markdown("### £9/month")
-        st.markdown("""
-        - Up to 500 rows  
-        - Sales dashboard  
-        - Product insights  
-        - Download reports  
-        """)
+        st.markdown("- Up to 500 rows\n- Sales dashboard\n- Product insights\n- Download reports")
         upgrade_button("starter")
 
     with p2:
         st.markdown("#### Pro")
         st.markdown("### £19/month")
-        st.markdown("""
-        - Up to 5,000 rows  
-        - Forecasting  
-        - AI Assistant  
-        - Executive reports  
-        """)
+        st.markdown("- Up to 5,000 rows\n- Forecasting\n- AI Assistant\n- Executive reports")
         upgrade_button("pro")
 
     with p3:
         st.markdown("#### Premium")
         st.markdown("### £39/month")
-        st.markdown("""
-        - Up to 50,000 rows  
-        - SHAP Explainability  
-        - Advanced insights  
-        - Premium analytics  
-        """)
+        st.markdown("- Up to 50,000 rows\n- SHAP Explainability\n- Advanced insights\n- Premium analytics")
         upgrade_button("premium")
 
     st.markdown("---")
 
 
 def create_account_request():
-    with st.expander("Create New Account / Request Access"):
-        full_name = st.text_input("Full Name")
-        email = st.text_input("Email Address")
-        business_name = st.text_input("Business Name")
+    st.markdown("<br>", unsafe_allow_html=True)
+
+    with st.expander(" Create New Account / Request Access"):
+        st.markdown("""
+        <div style="
+            background:#ffffff;
+            padding:22px;
+            border-radius:18px;
+            border:1px solid #e5e7eb;
+            box-shadow:0 8px 22px rgba(15,23,42,0.05);
+            margin-bottom:15px;
+        ">
+            <h3 style="margin-top:0;color:#111827;">Start your business growth journey</h3>
+            <p style="color:#6b7280;margin-bottom:0;">
+                Submit your details and requested plan. Your account will be activated after payment confirmation.
+            </p>
+        </div>
+        """, unsafe_allow_html=True)
+
+        full_name = st.text_input("Full Name", placeholder="e.g. Noor Saba")
+        email = st.text_input("Email Address", placeholder="e.g. noor@email.com")
+        business_name = st.text_input("Business Name", placeholder="e.g. Noor Analytics Ltd")
         requested_plan = st.selectbox("Choose Plan", ["starter", "pro", "premium"])
 
-        if st.button("Submit Account Request"):
+        if st.button("Submit Request", use_container_width=True):
             if not full_name or not email or not business_name:
                 st.error("Please complete all fields.")
+            elif "@" not in email or "." not in email:
+                st.error("Please enter a valid email address.")
             else:
                 request = pd.DataFrame([{
                     "full_name": full_name,
@@ -180,45 +186,140 @@ def create_account_request():
                     "status": "pending"
                 }])
 
-                signup_file = Path("signup_requests.csv")
+                signup_file = Path("system_data/signup_requests.csv")
+                signup_file.parent.mkdir(exist_ok=True)
 
                 if signup_file.exists():
                     old = pd.read_csv(signup_file)
                     request = pd.concat([old, request], ignore_index=True)
 
                 request.to_csv(signup_file, index=False)
-
-                st.success(
-                    "Your account request has been submitted. "
-                    "You will be contacted after payment confirmation."
-                )
+                st.success("✅ Request submitted. You will be contacted after payment confirmation.")
 
 
 def login():
     landing_page()
 
-    st.markdown("## 🔐 Login")
-    st.caption("Enter your customer account details to access your dashboard.")
+    # Dark mode toggle
+    dark_mode = st.toggle("🌙 Dark mode", value=False)
 
-    username = st.text_input("Username")
-    password = st.text_input("Password", type="password")
+    if dark_mode:
+        st.markdown("""
+        <style>
+        .stApp {
+            background: #0f172a;
+            color: white;
+        }
+        input {
+            background: #1e293b !important;
+            color: white !important;
+        }
+        </style>
+        """, unsafe_allow_html=True)
 
-    users = st.secrets.get("USERS", [])
+    st.markdown("## 🔐 Secure Login")
 
-    if st.button("Login"):
-        for user in users:
-            if username == user["username"] and password == user["password"]:
-                st.session_state["logged_in"] = True
-                st.session_state["username"] = user["username"]
-                st.session_state["role"] = user["role"]
-                st.session_state["plan"] = user["plan"]
-                st.success("Login successful.")
-                st.rerun()
+    col1, col2 = st.columns([1.2, 1])
 
-        st.error("Incorrect username or password.")
+    with col1:
+        st.markdown("""
+        <div style="padding:40px;">
+            <h2 style="color:#4f46e5;">Welcome to</h2>
+            <h1 style="font-size:42px;">AI Business Growth Platform</h1>
+            <p style="color:#6b7280;font-size:16px;">
+                Turn your sales data into insights, forecasts, and AI-powered decisions.
+            </p>
+            <p style="color:#374151;font-size:17px;">📊 Real-time dashboards</p>
+            <p style="color:#374151;font-size:17px;">📈 Revenue forecasting</p>
+            <p style="color:#374151;font-size:17px;">🤖 AI-powered recommendations</p>
+            <p style="color:#374151;font-size:17px;">📄 Executive reports</p>
+        </div>
+        """, unsafe_allow_html=True)
 
-    create_account_request()
+    with col2:
+        st.markdown("### Account Login")
 
+        username = st.text_input("Username")
+
+        show_password = st.checkbox("👁 Show password")
+        password_type = "default" if show_password else "password"
+        password = st.text_input("Password", type=password_type)
+
+        remember_me = st.checkbox("🔐 Remember me")
+
+        users = st.secrets.get("USERS", [])
+
+        if st.button("Login", use_container_width=True):
+            login_success = False
+
+            for user in users:
+                if username.strip() == user["username"] and password.strip() == user["password"]:
+                    st.session_state["logged_in"] = True
+                    st.session_state["username"] = user["username"]
+                    st.session_state["role"] = user["role"]
+                    st.session_state["plan"] = user["plan"]
+                    st.session_state["remember_me"] = remember_me
+                    login_success = True
+
+                    with st.spinner("Redirecting to your dashboard..."):
+                        import time
+                        time.sleep(1)
+
+                    st.success("Login successful.")
+                    st.rerun()
+
+            if not login_success:
+                st.error("Incorrect username or password.")
+
+        st.markdown("---")
+
+        with st.expander("🔑 Forgot password?"):
+            st.markdown("Enter your registered email to request a password reset.")
+
+            forgot_email = st.text_input(
+                "Email address",
+                placeholder="e.g. noor@email.com"
+            )
+
+            if st.button("Send password reset request", use_container_width=True):
+                if not forgot_email:
+                    st.error("Please enter your email address.")
+                elif "@" not in forgot_email or "." not in forgot_email:
+                    st.error("Please enter a valid email address.")
+                else:
+                    try:
+                        reset_file = Path("system_data/password_reset_requests.csv")
+                        reset_file.parent.mkdir(exist_ok=True)
+
+                        if reset_file.exists():
+                            existing = pd.read_csv(reset_file)
+                        else:
+                            existing = pd.DataFrame(columns=["email", "status", "timestamp"])
+
+                        clean_email = forgot_email.strip().lower()
+
+                        if clean_email in existing["email"].astype(str).str.lower().values:
+                            st.warning("A reset request already exists for this email.")
+                        else:
+                            new_request = pd.DataFrame([{
+                                "email": clean_email,
+                                "status": "pending",
+                                "timestamp": pd.Timestamp.now()
+                            }])
+
+                            updated = pd.concat([existing, new_request], ignore_index=True)
+                            updated.to_csv(reset_file, index=False)
+
+                            st.success("✅ Password reset request submitted. You will be contacted shortly.")
+
+                    except Exception as e:
+                        st.error("Something went wrong while saving your request.")
+                        st.caption(str(e)) 
+
+                    create_account_request()
+# =========================
+# LOGIN CHECK
+# =========================
 
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
@@ -251,22 +352,26 @@ client = OpenAI(api_key=api_key)
 
 st.markdown("""
 <style>
+
+/* App background */
 .stApp {
     background: #f6f9ff;
 }
 
+/* Main page spacing */
+.block-container {
+    padding-top: 2rem;
+    padding-left: 2rem;
+    padding-right: 2rem;
+}
+
+/* Sidebar */
 section[data-testid="stSidebar"] {
     background: linear-gradient(180deg, #111827 0%, #4f46e5 100%);
 }
 
 section[data-testid="stSidebar"] * {
     color: white !important;
-}
-
-.block-container {
-    padding-top: 2rem;
-    padding-left: 2rem;
-    padding-right: 2rem;
 }
 
 .sidebar-logo {
@@ -287,6 +392,7 @@ section[data-testid="stSidebar"] * {
     background: rgba(255,255,255,0.22);
 }
 
+/* Hero section */
 .hero {
     background: linear-gradient(135deg, #6d28d9, #0ea5e9);
     padding: 34px 38px;
@@ -308,6 +414,7 @@ section[data-testid="stSidebar"] * {
     color: #e0f2fe;
 }
 
+/* Cards */
 .card {
     background: white;
     padding: 24px;
@@ -337,6 +444,7 @@ section[data-testid="stSidebar"] * {
     font-size: 13px;
 }
 
+/* KPI cards */
 .metric-card {
     padding: 22px;
     border-radius: 20px;
@@ -365,6 +473,7 @@ section[data-testid="stSidebar"] * {
     opacity: 0.95;
 }
 
+/* Insight sections */
 .insight {
     padding: 15px;
     border-radius: 14px;
@@ -401,6 +510,30 @@ section[data-testid="stSidebar"] * {
     margin-bottom: 20px;
 }
 
+/* Inputs */
+input {
+    border-radius: 10px !important;
+    border: 1px solid #d1d5db !important;
+    padding: 10px !important;
+}
+
+/* Buttons */
+.stButton button {
+    background: linear-gradient(135deg, #6366f1, #4f46e5) !important;
+    color: white !important;
+    border-radius: 10px !important;
+    font-weight: 600 !important;
+    height: 45px !important;
+    border: none !important;
+}
+
+.stButton button:hover {
+    opacity: 0.92;
+    transform: scale(1.01);
+    transition: 0.2s;
+}
+
+/* Stop duplicated Streamlit text */
 .stButton button::before,
 .stButton button::after,
 section[data-testid="stFileUploader"] button::before,
@@ -411,6 +544,7 @@ div[data-testid="stExpander"] summary::after {
     display: none !important;
 }
 
+/* File uploader */
 section[data-testid="stFileUploader"] label {
     display: none !important;
 }
@@ -422,9 +556,15 @@ section[data-testid="stFileUploader"] button {
     border-radius: 10px !important;
     font-weight: 600 !important;
 }
+
+/* Tabs */
+button[data-baseweb="tab"] {
+    font-weight: 700 !important;
+    border-radius: 12px !important;
+}
+
 </style>
 """, unsafe_allow_html=True)
-
 # =========================
 # SIDEBAR
 # =========================
