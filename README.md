@@ -1,6 +1,6 @@
 ![Banner](images/banner.png)
 
-# AI-Powered Business Growth Platform
+# 🚀 AI-Powered Business Growth Platform
 
 <p align="center">
 <b>Transform your business data into actionable insights using AI, forecasting, and advanced analytics.</b><br>
@@ -27,52 +27,52 @@ Predict. Optimise. Grow.
 
 ---
 
-## Overview
+## 🧠 Overview
 
-The **AI-Powered Business Growth Platform** is a full-stack, SaaS-style analytics system built to help small and medium-sized businesses make smarter, data-driven decisions.
+The **AI-Powered Business Growth Platform** is a full-stack, SaaS-style analytics system designed for small and medium businesses.
 
-It converts raw sales data into:
+It transforms raw sales data into:
 
 - 📊 Real-time KPIs  
 - 📈 Revenue forecasts  
 - 🤖 AI-driven insights  
-- 🔍 Explainable machine learning outputs  
-- 📄 Executive-level reports  
+- 🔍 Explainable ML outputs  
+- 📄 Executive reports  
 
 ---
 
-## Key Features
+## ⚡ Key Features
 
 ### 📊 Smart Dashboard
-- Revenue, orders, and AOV tracking  
-- Product & category performance analysis  
-- Growth trend detection  
+- Revenue, orders, AOV tracking  
+- Product & category performance  
+- Growth detection & trend analysis  
 
-### 📈 Forecasting (Machine Learning)
-- Advanced time-series forecasting using Prophet  
-- Linear regression fallback for stability  
-- Future revenue predictions  
+### 📈 Forecasting Engine
+- Prophet-based time series forecasting  
+- Linear regression fallback  
+- Future revenue prediction (3+ months)  
 
 ### 🤖 AI Business Assistant
-- Ask business questions in natural language  
-- Receive clear, actionable recommendations  
-- AI-generated executive summaries  
+- Natural language queries  
+- Business recommendations  
+- Executive summaries using OpenAI  
 
 ### 🔍 SHAP Explainability
-- Understand **why sales are changing**  
-- Feature importance insights  
-- Transparent decision-making  
+- Feature importance analysis  
+- Model transparency  
+- Understand **why sales change**  
 
 ### 📄 Executive Reporting
-- Download cleaned datasets (CSV)  
-- Generate executive reports  
-- AI-powered summaries  
+- CSV export  
+- PDF report generation  
+- AI-generated summaries  
 
-### 💼 SaaS System
-- Multi-user login system  
+### 🔐 SaaS System
+- Secure login system  
 - Role-based access control  
-- Plan-based feature access  
-- Secure data isolation per user  
+- Plan-based feature gating  
+- User-level data isolation  
 
 ---
 
@@ -85,7 +85,7 @@ It converts raw sales data into:
 | Visualisation | Plotly |
 | Machine Learning | Scikit-learn, Prophet |
 | Explainability | SHAP |
-| AI | OpenAI API |
+| AI Integration | OpenAI API |
 | Reporting | ReportLab |
 | Backend Logic | Python |
 | Deployment | Streamlit Cloud |
@@ -98,18 +98,18 @@ It converts raw sales data into:
 - 📦 Product Performance Ranking  
 - 📈 Monthly Growth Trends  
 - 🔥 Top Growth Products  
-- 📊 Category Contribution  
+- 🧾 Category Contribution Analysis  
 
 ---
 
 ## 🤖 AI Capabilities
 
-This platform leverages AI to:
+This platform integrates AI to:
 
 - Generate **business recommendations**
-- Create **executive summaries**
+- Provide **executive summaries**
 - Answer custom business questions
-- Identify risks and growth opportunities
+- Identify **risks and growth opportunities**
 
 ---
 
@@ -117,22 +117,12 @@ This platform leverages AI to:
 
 ### Forecasting
 - Time-series modelling using Prophet  
-- Regression-based fallback model  
+- Regression fallback for reliability  
 
 ### Explainability
 - Random Forest model  
 - SHAP-based feature importance  
-- Interpretable insights for business users  
-
----
-
-## 💼 SaaS Monetisation Model
-
-| Plan | Features |
-|------|---------|
-| **Starter** | Dashboard + Reporting |
-| **Pro** | Forecasting + AI Assistant |
-| **Premium** | SHAP + Advanced Analytics |
+- Transparent decision-making  
 
 ---
 
