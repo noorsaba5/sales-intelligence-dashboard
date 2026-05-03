@@ -161,11 +161,9 @@ streamlit run app.py
 
 ## 🔐 Environment Setup (Secrets)
 
-## 🔐 Environment Setup (Secrets)
-
 OPENAI_API_KEY = "your_api_key_here"
 
-# Example user (for testing only)
+### Example user (for testing only)
 [[USERS]]
 username = "demo_user"
 password = "your_secure_password"
