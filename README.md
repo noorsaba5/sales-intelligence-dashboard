@@ -10,7 +10,7 @@ Predict. Optimise. Grow.
 ---
 
 ## 🌐 Live Application
-👉 https://ai-business-operations-system-b3maddq62lk7tbtlznjyd3.streamlit.app/
+👉 https://sales-intelligence-dashboard-fuwvgsiqvtmedwg3yjyrni.streamlit.app/
 
 ---
 
