@@ -141,8 +141,13 @@ This platform leverages AI to:
 ├── app.py
 ├── data/
 ├── user_data/
+│   ├── client1/
+│   └── noor/
 ├── images/
-│ └── banner.png
+│   ├── banner.png
+│   ├── dashboard.png
+│   ├── forecasting.png
+│   └── ai-assistant.png
 ├── requirements.txt
 └── README.md
 
@@ -178,12 +183,14 @@ plan = "starter"
 - Production version should use hashed passwords and a database  
 
 ## 🚀 Future Improvements
-🔐 Stripe subscription automation (webhooks)
-🧠 Advanced forecasting (ARIMA, LSTM)
-☁️ Full cloud SaaS deployment
-📡 Real-time data integration
-⚙️ Model optimisation & tuning
-📊 Advanced analytics dashboard
+
+- 🔐 Stripe subscription automation (webhooks)  
+- 🧠 Advanced forecasting (ARIMA, LSTM)  
+- ☁️ Full cloud SaaS deployment  
+- 📡 Real-time data integration  
+- ⚙️ Model optimisation & tuning  
+- 📊 Advanced analytics dashboard  
+
 
 ## 👤 Author
 
@@ -193,6 +200,6 @@ Aspiring Data Scientist | AI & Machine Learning
 </p>
 
 
-## ⭐ If you found this useful
+### ⭐ If you found this useful
 
 Give it a star ⭐ and feel free to connect!
