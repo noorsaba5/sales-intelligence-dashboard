@@ -9,69 +9,70 @@ Predict. Optimise. Grow.
 
 ---
 
-## Live Application
+## 🌐 Live Application
 👉 https://ai-business-operations-system-b3maddq62lk7tbtlznjyd3.streamlit.app/
 
 ---
-## App Preview
 
-### Dashboard
+## 📸 App Preview
+
+### 📊 Dashboard
 ![Dashboard](images/dashboard.png)
 
-### Forecasting
+### 📈 Forecasting
 ![Forecasting](images/forecasting.png)
 
-### AI Assistant
+### 🤖 AI Assistant
 ![AI Assistant](images/ai-assistant.png)
+
+---
 
 ## Overview
 
-The **AI-Powered Business Growth Platform** is a full-stack SaaS-style analytics system designed for small and medium businesses.
+The **AI-Powered Business Growth Platform** is a full-stack, SaaS-style analytics system built to help small and medium-sized businesses make smarter, data-driven decisions.
 
-It transforms raw sales data into:
+It converts raw sales data into:
 
 - 📊 Real-time KPIs  
 - 📈 Revenue forecasts  
-- 🧠 AI-driven insights  
-- 🔍 Explainable ML outputs  
-- 📄 Executive reports  
-
-> ⚡ Built as a production-ready analytics product — not just a project.
+- 🤖 AI-driven insights  
+- 🔍 Explainable machine learning outputs  
+- 📄 Executive-level reports  
 
 ---
 
 ## Key Features
 
-### Smart Dashboard
-- Revenue, orders, AOV tracking  
-- Product & category performance  
-- Growth detection  
+### 📊 Smart Dashboard
+- Revenue, orders, and AOV tracking  
+- Product & category performance analysis  
+- Growth trend detection  
 
-### Forecasting (ML)
-- Prophet (advanced forecasting)  
-- Linear regression fallback  
-- Future revenue prediction  
+### 📈 Forecasting (Machine Learning)
+- Advanced time-series forecasting using Prophet  
+- Linear regression fallback for stability  
+- Future revenue predictions  
 
-### AI Business Assistant
-- Ask business questions  
-- Get actionable recommendations  
-- Executive summaries  
+### 🤖 AI Business Assistant
+- Ask business questions in natural language  
+- Receive clear, actionable recommendations  
+- AI-generated executive summaries  
 
-### SHAP Explainability
-- Understand **why sales change**  
-- Feature importance analysis  
-- Model transparency  
+### 🔍 SHAP Explainability
+- Understand **why sales are changing**  
+- Feature importance insights  
+- Transparent decision-making  
 
-### Executive Reporting
-- CSV downloads  
-- PDF report generation  
-- AI-generated business summaries  
+### 📄 Executive Reporting
+- Download cleaned datasets (CSV)  
+- Generate executive reports  
+- AI-powered summaries  
 
-### SaaS System
-- User login system  
-- Role-based access  
-- Plan-based feature control  
-- Data isolation per user  
+### 💼 SaaS System
+- Multi-user login system  
+- Role-based access control  
+- Plan-based feature access  
+- Secure data isolation per user  
 
 ---
 
@@ -80,9 +81,9 @@ It transforms raw sales data into:
 | Layer | Tools |
 |------|------|
 | Frontend | Streamlit |
-| Data | Pandas, NumPy |
+| Data Processing | Pandas, NumPy |
 | Visualisation | Plotly |
-| ML Models | Scikit-learn, Prophet |
+| Machine Learning | Scikit-learn, Prophet |
 | Explainability | SHAP |
 | AI | OpenAI API |
 | Reporting | ReportLab |
@@ -101,31 +102,42 @@ It transforms raw sales data into:
 
 ---
 
-## AI Capabilities
+## 🤖 AI Capabilities
 
-This platform integrates AI to:
+This platform leverages AI to:
 
 - Generate **business recommendations**
-- Summarise performance into **executive insights**
-- Answer custom business queries
-- Highlight risks and opportunities
+- Create **executive summaries**
+- Answer custom business questions
+- Identify risks and growth opportunities
 
 ---
 
-## Machine Learning Approach
+## 🧪 Machine Learning Approach
 
 ### Forecasting
-- Time-series modelling using Prophet
-- Regression-based fallback for reliability
+- Time-series modelling using Prophet  
+- Regression-based fallback model  
 
-### SHAP Explainability
-- Random Forest model
-- Feature importance extraction
-- Interpretability for decision-making
+### Explainability
+- Random Forest model  
+- SHAP-based feature importance  
+- Interpretable insights for business users  
 
 ---
 
-## 📁 Project Structure
+## 💼 SaaS Monetisation Model
+
+| Plan | Features |
+|------|---------|
+| **Starter** | Dashboard + Reporting |
+| **Pro** | Forecasting + AI Assistant |
+| **Premium** | SHAP + Advanced Analytics |
+
+---
+
+## 🧩 Project Structure
+
 ├── app.py
 ├── data/
 ├── user_data/
@@ -133,7 +145,6 @@ This platform integrates AI to:
 │ └── banner.png
 ├── requirements.txt
 └── README.md
-
 
 ---
 
@@ -148,21 +159,33 @@ pip install -r requirements.txt
 ### 3. Run App
 streamlit run app.py
 
-## Plan	Features
-Starter = Dashboard + reports
-Pro	= Forecasting + AI
-Premium	= SHAP + Advanced analytics
+## 🔐 Environment Setup (Secrets)
 
+## 🔐 Environment Setup (Secrets)
 
-## 💼 SaaS Features
+OPENAI_API_KEY = "your_api_key_here"
 
-* 🔐 Secure login system (multi-user support)
-* 💳 Stripe-ready monetisation model
-* 📊 Tier-based feature access (Starter / Pro / Premium)
-* 🤖 AI-powered business insights
-* 📈 Forecasting & predictive analytics
-* 📄 Automated report generation
+# Example user (for testing only)
+[[USERS]]
+username = "demo_user"
+password = "your_secure_password"
+role = "customer"
+plan = "starter"
 
+## 🔒 Security Notes
+
+- Secrets are stored using Streamlit secrets  
+- User data is isolated per account  
+- Sensitive files are excluded via `.gitignore`  
+- Production version should use hashed passwords and a database  
+
+## 🚀 Future Improvements
+🔐 Stripe subscription automation (webhooks)
+🧠 Advanced forecasting (ARIMA, LSTM)
+☁️ Full cloud SaaS deployment
+📡 Real-time data integration
+⚙️ Model optimisation & tuning
+📊 Advanced analytics dashboard
 
 ## 👤 Author
 
@@ -170,3 +193,8 @@ Premium	= SHAP + Advanced analytics
 <b>Noor Saba</b><br>
 Aspiring Data Scientist | AI & Machine Learning
 </p>
+
+
+## ⭐ If you found this useful
+
+Give it a star ⭐ and feel free to connect!
