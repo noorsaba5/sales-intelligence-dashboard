@@ -13,6 +13,7 @@ import streamlit as st
 import pandas as pd
 import plotly.express as px
 from openai import OpenAI
+from supabase import create_client
 from difflib import get_close_matches
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
@@ -74,6 +75,19 @@ PLAN_LIMITS = {
 
 
 # =========================
+# SUPABASE CLIENT
+# =========================
+
+try:
+    supabase = create_client(
+        st.secrets["SUPABASE_URL"],
+        st.secrets["SUPABASE_ANON_KEY"]
+    )
+except Exception:
+    supabase = None
+
+
+# =========================
 # HELPER FUNCTIONS
 # =========================
 
@@ -111,7 +125,6 @@ def upgrade_button(plan_name):
 
 
 # =========================
-# =========================
 # LANDING PAGE + LOGIN
 # =========================
 
@@ -147,58 +160,87 @@ def landing_page():
     st.markdown("---")
 
 
-def create_account_request():
-    st.markdown("<br>", unsafe_allow_html=True)
+def get_user_plan(user_id):
+    """Fetch the logged-in user's plan from Supabase profiles table."""
+    try:
+        result = (
+            supabase
+            .table("profiles")
+            .select("plan")
+            .eq("id", user_id)
+            .single()
+            .execute()
+        )
 
-    with st.expander(" Create New Account / Request Access"):
-        st.markdown("""
-        <div style="
-            background:#ffffff;
-            padding:22px;
-            border-radius:18px;
-            border:1px solid #e5e7eb;
-            box-shadow:0 8px 22px rgba(15,23,42,0.05);
-            margin-bottom:15px;
-        ">
-            <h3 style="margin-top:0;color:#111827;">Start your business growth journey</h3>
-            <p style="color:#6b7280;margin-bottom:0;">
-                Submit your details and requested plan. Your account will be activated after payment confirmation.
-            </p>
-        </div>
-        """, unsafe_allow_html=True)
+        if result.data and result.data.get("plan"):
+            return result.data["plan"]
 
-        full_name = st.text_input("Full Name", placeholder="e.g. Noor Saba")
-        email = st.text_input("Email Address", placeholder="e.g. noor@email.com")
-        business_name = st.text_input("Business Name", placeholder="e.g. Noor Analytics Ltd")
-        requested_plan = st.selectbox("Choose Plan", ["starter", "pro", "premium"])
+        return "starter"
 
-        if st.button("Submit Request", use_container_width=True):
-            if not full_name or not email or not business_name:
-                st.error("Please complete all fields.")
-            elif "@" not in email or "." not in email:
-                st.error("Please enter a valid email address.")
-            else:
-                request = pd.DataFrame([{
-                    "full_name": full_name,
-                    "email": email,
-                    "business_name": business_name,
-                    "requested_plan": requested_plan,
-                    "status": "pending"
-                }])
+    except Exception:
+        return "starter"
 
-                signup_file = Path("system_data/signup_requests.csv")
-                signup_file.parent.mkdir(exist_ok=True)
 
-                if signup_file.exists():
-                    old = pd.read_csv(signup_file)
-                    request = pd.concat([old, request], ignore_index=True)
+def ensure_user_profile(user_id, business_name=""):
+    """
+    Create a starter profile for a new user if it does not already exist.
+    This runs after login/signup so the authenticated user can insert their own profile.
+    """
+    try:
+        result = (
+            supabase
+            .table("profiles")
+            .select("id, plan, business_name")
+            .eq("id", user_id)
+            .single()
+            .execute()
+        )
 
-                request.to_csv(signup_file, index=False)
-                st.success("✅ Request submitted. You will be contacted after payment confirmation.")
+        if result.data:
+            return result.data
+
+    except Exception:
+        pass
+
+    try:
+        result = (
+            supabase
+            .table("profiles")
+            .insert({
+                "id": user_id,
+                "plan": "starter",
+                "business_name": business_name
+            })
+            .execute()
+        )
+
+        if result.data:
+            return result.data[0]
+
+    except Exception as e:
+        st.warning("Profile could not be created automatically.")
+        st.caption(str(e))
+
+    return {"id": user_id, "plan": "starter", "business_name": business_name}
+
+
+def set_logged_in_session(user, plan):
+    """Save the logged-in user details in Streamlit session state."""
+    st.session_state["logged_in"] = True
+    st.session_state["user"] = user
+    st.session_state["user_id"] = user.id
+    st.session_state["email"] = user.email
+    st.session_state["username"] = user.id
+    st.session_state["role"] = "customer"
+    st.session_state["plan"] = plan.lower()
 
 
 def login():
     landing_page()
+
+    if supabase is None:
+        st.error("Supabase is not connected. Add SUPABASE_URL and SUPABASE_ANON_KEY in Streamlit Cloud secrets.")
+        st.stop()
 
     # Dark mode toggle
     dark_mode = st.toggle("🌙 Dark mode", value=False)
@@ -217,7 +259,7 @@ def login():
         </style>
         """, unsafe_allow_html=True)
 
-    st.markdown("## 🔐 Secure Login")
+    st.markdown("## 🔐 Secure Customer Login")
 
     col1, col2 = st.columns([1.2, 1])
 
@@ -237,86 +279,91 @@ def login():
         """, unsafe_allow_html=True)
 
     with col2:
-        st.markdown("### Account Login")
+        tab_login, tab_signup, tab_reset = st.tabs(["Login", "Sign Up", "Reset Password"])
 
-        username = st.text_input("Username")
+        with tab_login:
+            st.markdown("### Login to your account")
 
-        show_password = st.checkbox("👁 Show password")
-        password_type = "default" if show_password else "password"
-        password = st.text_input("Password", type=password_type)
+            email = st.text_input("Email address", key="login_email")
+            password = st.text_input("Password", type="password", key="login_password")
+            remember_me = st.checkbox("🔐 Remember me", key="remember_me")
 
-        remember_me = st.checkbox("🔐 Remember me")
-
-        users = st.secrets.get("USERS", [])
-
-        if st.button("Login", use_container_width=True):
-            login_success = False
-
-            for user in users:
-                if username.strip() == user["username"] and password.strip() == user["password"]:
-                    st.session_state["logged_in"] = True
-                    st.session_state["username"] = user["username"]
-                    st.session_state["role"] = user["role"]
-                    st.session_state["plan"] = user["plan"]
-                    st.session_state["remember_me"] = remember_me
-                    login_success = True
-
-                    with st.spinner("Redirecting to your dashboard..."):
-                        import time
-                        time.sleep(1)
-
-                    st.success("Login successful.")
-                    st.rerun()
-
-            if not login_success:
-                st.error("Incorrect username or password.")
-
-        st.markdown("---")
-
-        with st.expander("🔑 Forgot password?"):
-            st.markdown("Enter your registered email to request a password reset.")
-
-            forgot_email = st.text_input(
-                "Email address",
-                placeholder="e.g. noor@email.com"
-            )
-
-            if st.button("Send password reset request", use_container_width=True):
-                if not forgot_email:
-                    st.error("Please enter your email address.")
-                elif "@" not in forgot_email or "." not in forgot_email:
-                    st.error("Please enter a valid email address.")
+            if st.button("Login", use_container_width=True):
+                if not email or not password:
+                    st.error("Please enter your email and password.")
                 else:
                     try:
-                        reset_file = Path("system_data/password_reset_requests.csv")
-                        reset_file.parent.mkdir(exist_ok=True)
+                        response = supabase.auth.sign_in_with_password({
+                            "email": email.strip().lower(),
+                            "password": password
+                        })
 
-                        if reset_file.exists():
-                            existing = pd.read_csv(reset_file)
-                        else:
-                            existing = pd.DataFrame(columns=["email", "status", "timestamp"])
+                        user = response.user
 
-                        clean_email = forgot_email.strip().lower()
+                        ensure_user_profile(user.id)
+                        plan = get_user_plan(user.id)
 
-                        if clean_email in existing["email"].astype(str).str.lower().values:
-                            st.warning("A reset request already exists for this email.")
-                        else:
-                            new_request = pd.DataFrame([{
-                                "email": clean_email,
-                                "status": "pending",
-                                "timestamp": pd.Timestamp.now()
-                            }])
+                        set_logged_in_session(user, plan)
+                        st.session_state["remember_me"] = remember_me
 
-                            updated = pd.concat([existing, new_request], ignore_index=True)
-                            updated.to_csv(reset_file, index=False)
-
-                            st.success("✅ Password reset request submitted. You will be contacted shortly.")
+                        st.success("Login successful.")
+                        st.rerun()
 
                     except Exception as e:
-                        st.error("Something went wrong while saving your request.")
-                        st.caption(str(e)) 
+                        st.error("Incorrect email or password, or your email is not confirmed.")
+                        st.caption(str(e))
 
-                    create_account_request()
+        with tab_signup:
+            st.markdown("### Create a new account")
+
+            signup_email = st.text_input("Email address", key="signup_email")
+            signup_password = st.text_input("Password", type="password", key="signup_password")
+            business_name = st.text_input("Business name", key="signup_business_name")
+
+            if st.button("Create Account", use_container_width=True):
+                if not signup_email or not signup_password:
+                    st.error("Please enter your email and password.")
+                elif len(signup_password) < 6:
+                    st.error("Password must be at least 6 characters.")
+                else:
+                    try:
+                        response = supabase.auth.sign_up({
+                            "email": signup_email.strip().lower(),
+                            "password": signup_password
+                        })
+
+                        if response.user:
+                            # If email confirmation is OFF, this can create the profile immediately.
+                            # If email confirmation is ON, the profile may be created after first login.
+                            try:
+                                ensure_user_profile(response.user.id, business_name)
+                            except Exception:
+                                pass
+
+                            st.success("Account created. Please log in now.")
+                            st.info("If email confirmation is enabled in Supabase, check your inbox first.")
+
+                    except Exception as e:
+                        st.error("Could not create account.")
+                        st.caption(str(e))
+
+        with tab_reset:
+            st.markdown("### Reset your password")
+
+            reset_email = st.text_input("Registered email address", key="reset_email")
+
+            if st.button("Send Password Reset Email", use_container_width=True):
+                if not reset_email:
+                    st.error("Please enter your email address.")
+                else:
+                    try:
+                        supabase.auth.reset_password_email(reset_email.strip().lower())
+                        st.success("Password reset email sent. Please check your inbox.")
+                    except Exception as e:
+                        st.error("Could not send password reset email.")
+                        st.caption(str(e))
+
+
 # =========================
 # LOGIN CHECK
 # =========================
@@ -572,7 +619,7 @@ button[data-baseweb="tab"] {
 with st.sidebar:
     st.markdown('<div class="sidebar-logo">Business<br>Growth AI</div>', unsafe_allow_html=True)
 
-    st.markdown(f"**User:** {st.session_state['username']}")
+    st.markdown(f"**User:** {st.session_state.get('email', st.session_state.get('username', ''))}")
     st.markdown(f"**Plan:** {st.session_state['plan'].title()}")
     st.markdown(f"**Role:** {st.session_state['role'].title()}")
 
@@ -592,6 +639,10 @@ with st.sidebar:
         upgrade_button("premium")
 
     if st.button("Logout"):
+        try:
+            supabase.auth.sign_out()
+        except Exception:
+            pass
         st.session_state.clear()
         st.rerun()
 

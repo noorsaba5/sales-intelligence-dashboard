@@ -8,3 +8,4 @@ numpy
 prophet
 shap
 reportlab
+supabase
