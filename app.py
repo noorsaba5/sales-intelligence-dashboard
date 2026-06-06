@@ -279,14 +279,16 @@ def login():
         """, unsafe_allow_html=True)
 
     with col2:
-        tab_login, tab_signup, tab_reset = st.tabs(["Login", "Sign Up", "Reset Password"])
+        tab_login, tab_signup, tab_reset = st.tabs(
+            ["Login", "Sign Up", "Reset Password"]
+        )
 
         with tab_login:
             st.markdown("### Login to your account")
 
             email = st.text_input("Email address", key="login_email")
             password = st.text_input("Password", type="password", key="login_password")
-            remember_me = st.checkbox("🔐 Remember me", key="remember_me")
+            st.checkbox("🔐 Remember me", key="remember_me")
 
             if st.button("Login", use_container_width=True):
                 if not email or not password:
@@ -304,14 +306,12 @@ def login():
                         plan = get_user_plan(user.id)
 
                         set_logged_in_session(user, plan)
-                        st.session_state["remember_me"] = remember_me
 
                         st.success("Login successful.")
                         st.rerun()
 
                     except Exception as e:
-                        st.error("Incorrect email or password, or your email is not confirmed.")
-                        st.caption(str(e))
+                        st.error(f"Login error: {e}")
 
         with tab_signup:
             st.markdown("### Create a new account")
@@ -333,15 +333,13 @@ def login():
                         })
 
                         if response.user:
-                            # If email confirmation is OFF, this can create the profile immediately.
-                            # If email confirmation is ON, the profile may be created after first login.
                             try:
                                 ensure_user_profile(response.user.id, business_name)
-                            except Exception:
-                                pass
+                            except Exception as e:
+                                st.warning("Account created, but profile was not created automatically.")
+                                st.caption(str(e))
 
                             st.success("Account created. Please log in now.")
-                            st.info("If email confirmation is enabled in Supabase, check your inbox first.")
 
                     except Exception as e:
                         st.error("Could not create account.")
@@ -362,7 +360,6 @@ def login():
                     except Exception as e:
                         st.error("Could not send password reset email.")
                         st.caption(str(e))
-
 
 # =========================
 # LOGIN CHECK
