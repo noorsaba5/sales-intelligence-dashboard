@@ -119,9 +119,13 @@ def upgrade_button(plan_name):
     link = st.secrets.get(key, "")
 
     if link:
-        st.link_button(f"Upgrade to {plan_name.title()}", link)
+        st.link_button(
+            f"Upgrade to {plan_name.title()}",
+            link,
+            use_container_width=True
+        )
     else:
-        st.info("Payment link not added yet. Add your Stripe link in secrets.toml.")
+        st.info(f"{plan_name.title()} payment link not added yet.")
 
 
 # =========================
