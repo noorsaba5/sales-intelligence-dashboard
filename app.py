@@ -73,16 +73,26 @@ PLAN_LIMITS = {
 
 
 # =========================
-# SUPABASE CLIENT
+# SUPABASE CLIENTS
 # =========================
+# supabase = normal client for Auth and profiles
+# supabase_admin = service role client for server-side Storage upload/download
 
 try:
     supabase = create_client(
         st.secrets["SUPABASE_URL"],
         st.secrets["SUPABASE_ANON_KEY"]
     )
-except Exception:
+
+    supabase_admin = create_client(
+        st.secrets["SUPABASE_URL"],
+        st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
+    )
+
+except Exception as e:
+    st.error(f"Supabase connection error: {e}")
     supabase = None
+    supabase_admin = None
 
 
 # =========================
@@ -262,19 +272,13 @@ def login():
     col1, col2 = st.columns([1.2, 1])
 
     with col1:
-        st.markdown("""
-        <div style="padding:40px;">
-            <h2 style="color:#4f46e5;">Welcome to</h2>
-            <h1 style="font-size:42px;">AI Business Growth Platform</h1>
-            <p style="color:#6b7280;font-size:16px;">
-                Turn your sales data into insights, forecasts, and AI-powered decisions.
-            </p>
-            <p style="color:#374151;font-size:17px;">📊 Real-time dashboards</p>
-            <p style="color:#374151;font-size:17px;">📈 Revenue forecasting</p>
-            <p style="color:#374151;font-size:17px;">🤖 AI-powered recommendations</p>
-            <p style="color:#374151;font-size:17px;">📄 Executive reports</p>
-        </div>
-        """, unsafe_allow_html=True)
+        st.markdown("## Welcome to")
+        st.markdown("# AI Business Growth Platform")
+        st.write("Turn your sales data into insights, forecasts, and AI-powered decisions.")
+        st.write("📊 Real-time dashboards")
+        st.write("📈 Revenue forecasting")
+        st.write("🤖 AI-powered recommendations")
+        st.write("📄 Executive reports")
 
     with col2:
         tab_login, tab_signup, tab_reset = st.tabs(["Login", "Sign Up", "Reset Password"])
@@ -516,7 +520,7 @@ def save_uploaded_file(file):
     file_bytes = file.getvalue()
 
     try:
-        supabase.storage.from_(STORAGE_BUCKET).upload(
+        supabase_admin.storage.from_(STORAGE_BUCKET).upload(
             storage_path,
             file_bytes,
             {"content-type": file.type or "application/octet-stream", "upsert": "true"}
@@ -524,7 +528,7 @@ def save_uploaded_file(file):
     except Exception as e:
         error_text = str(e).lower()
         if "already exists" in error_text or "duplicate" in error_text:
-            supabase.storage.from_(STORAGE_BUCKET).update(
+            supabase_admin.storage.from_(STORAGE_BUCKET).update(
                 storage_path,
                 file_bytes,
                 {"content-type": file.type or "application/octet-stream"}
@@ -537,7 +541,7 @@ def save_uploaded_file(file):
 
 def get_latest_user_file():
     user_id = st.session_state["user_id"]
-    files = supabase.storage.from_(STORAGE_BUCKET).list(user_id)
+    files = supabase_admin.storage.from_(STORAGE_BUCKET).list(user_id)
 
     if not files:
         return None
@@ -564,7 +568,7 @@ def load_data(file):
             st.info("No file uploaded yet. Demo sample data is being used.")
             return pd.read_csv("sample_sales.csv")
 
-    file_bytes = supabase.storage.from_(STORAGE_BUCKET).download(storage_path)
+    file_bytes = supabase_admin.storage.from_(STORAGE_BUCKET).download(storage_path)
     file_buffer = BytesIO(file_bytes)
 
     if storage_path.lower().endswith(".csv"):
