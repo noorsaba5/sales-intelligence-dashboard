@@ -18,15 +18,12 @@ from difflib import get_close_matches
 from sklearn.linear_model import LinearRegression
 from sklearn.ensemble import RandomForestRegressor
 import numpy as np
-from pathlib import Path
-
 
 try:
     from prophet import Prophet
     PROPHET_AVAILABLE = True
 except Exception:
     PROPHET_AVAILABLE = False
-
 
 try:
     import shap
@@ -51,6 +48,7 @@ st.set_page_config(
 # =========================
 
 APP_NAME = "AI-Powered Business Growth Platform"
+STORAGE_BUCKET = "user-files"
 
 PLAN_LIMITS = {
     "starter": {
@@ -133,7 +131,7 @@ def upgrade_button(plan_name):
 # =========================
 
 def landing_page():
-    st.markdown(f"#  {APP_NAME}")
+    st.markdown(f"# {APP_NAME}")
     st.markdown(
         "A SaaS-style analytics platform that helps small businesses turn sales data "
         "into KPIs, forecasts, growth opportunities, AI recommendations and executive reports."
@@ -186,10 +184,7 @@ def get_user_plan(user_id):
 
 
 def ensure_user_profile(user_id, business_name=""):
-    """
-    Create a starter profile for a new user if it does not already exist.
-    This runs after login/signup so the authenticated user can insert their own profile.
-    """
+    """Create a starter profile for a new user if it does not already exist."""
     try:
         result = (
             supabase
@@ -246,7 +241,6 @@ def login():
         st.error("Supabase is not connected. Add SUPABASE_URL and SUPABASE_ANON_KEY in Streamlit Cloud secrets.")
         st.stop()
 
-    # Dark mode toggle
     dark_mode = st.toggle("🌙 Dark mode", value=False)
 
     if dark_mode:
@@ -283,9 +277,7 @@ def login():
         """, unsafe_allow_html=True)
 
     with col2:
-        tab_login, tab_signup, tab_reset = st.tabs(
-            ["Login", "Sign Up", "Reset Password"]
-        )
+        tab_login, tab_signup, tab_reset = st.tabs(["Login", "Sign Up", "Reset Password"])
 
         with tab_login:
             st.markdown("### Login to your account")
@@ -305,10 +297,8 @@ def login():
                         })
 
                         user = response.user
-
                         ensure_user_profile(user.id)
                         plan = get_user_plan(user.id)
-
                         set_logged_in_session(user, plan)
 
                         st.success("Login successful.")
@@ -365,6 +355,7 @@ def login():
                         st.error("Could not send password reset email.")
                         st.caption(str(e))
 
+
 # =========================
 # LOGIN CHECK
 # =========================
@@ -378,20 +369,11 @@ if not st.session_state["logged_in"]:
 
 
 # =========================
-# USER DATA FOLDER
-# =========================
-
-BASE_DATA_DIR = Path("user_data")
-USER_DATA_DIR = BASE_DATA_DIR / st.session_state["username"]
-USER_DATA_DIR.mkdir(parents=True, exist_ok=True)
-
-
-# =========================
 # OPENAI CLIENT
 # =========================
 
-api_key = st.secrets.get("OPENAI_API_KEY", "YOUR_API_KEY_HERE")
-client = OpenAI(api_key=api_key)
+api_key = st.secrets.get("OPENAI_API_KEY", "")
+client = OpenAI(api_key=api_key) if api_key else None
 
 
 # =========================
@@ -400,237 +382,52 @@ client = OpenAI(api_key=api_key)
 
 st.markdown("""
 <style>
-
-/* App background */
-.stApp {
-    background: #f6f9ff;
-}
-
-/* Main page spacing */
-.block-container {
-    padding-top: 2rem;
-    padding-left: 2rem;
-    padding-right: 2rem;
-}
-
-/* Sidebar */
-section[data-testid="stSidebar"] {
-    background: linear-gradient(180deg, #111827 0%, #4f46e5 100%);
-}
-
-section[data-testid="stSidebar"] * {
-    color: white !important;
-}
-
-.sidebar-logo {
-    font-size: 26px;
-    font-weight: 900;
-    margin-bottom: 30px;
-    line-height: 1.2;
-}
-
-.nav-item {
-    padding: 14px 16px;
-    border-radius: 14px;
-    margin-bottom: 10px;
-    font-weight: 600;
-}
-
-.nav-active {
-    background: rgba(255,255,255,0.22);
-}
-
-/* Hero section */
-.hero {
-    background: linear-gradient(135deg, #6d28d9, #0ea5e9);
-    padding: 34px 38px;
-    border-radius: 26px;
-    color: white;
-    box-shadow: 0 16px 36px rgba(79,70,229,0.25);
-    margin-bottom: 24px;
-}
-
-.hero h1 {
-    color: white;
-    font-size: 40px;
-    margin: 0;
-}
-
-.hero p {
-    margin-top: 12px;
-    font-size: 16px;
-    color: #e0f2fe;
-}
-
-/* Cards */
-.card {
-    background: white;
-    padding: 24px;
-    border-radius: 22px;
-    border: 1px solid #e5e7eb;
-    box-shadow: 0 12px 30px rgba(15,23,42,0.06);
-    margin-bottom: 24px;
-}
-
-.upload-inner {
-    border: 2px dashed #c4b5fd;
-    border-radius: 18px;
-    text-align: center;
-    padding: 32px;
-    background: #fbfaff;
-    margin-bottom: 15px;
-}
-
-.pill {
-    display: inline-block;
-    padding: 8px 13px;
-    border-radius: 9px;
-    border: 1px solid #c4b5fd;
-    color: #5b21b6;
-    margin: 4px;
-    font-weight: 600;
-    font-size: 13px;
-}
-
-/* KPI cards */
-.metric-card {
-    padding: 22px;
-    border-radius: 20px;
-    color: white;
-    min-height: 155px;
-    box-shadow: 0 15px 30px rgba(0,0,0,0.14);
-    margin-bottom: 22px;
-}
-
-.metric-title {
-    font-size: 14px;
-    font-weight: 700;
-    opacity: 0.95;
-}
-
-.metric-value {
-    font-size: 28px;
-    font-weight: 900;
-    margin-top: 18px;
-    word-break: break-word;
-}
-
-.metric-sub {
-    font-size: 13px;
-    margin-top: 10px;
-    opacity: 0.95;
-}
-
-/* Insight sections */
-.insight {
-    padding: 15px;
-    border-radius: 14px;
-    margin-bottom: 12px;
-    border: 1px solid #e5e7eb;
-}
-
-.rec-box {
-    background: linear-gradient(135deg, #ecfdf5, #f0fdf4);
-    padding: 24px;
-    border-radius: 22px;
-    border: 1px solid #bbf7d0;
-    box-shadow: 0 12px 30px rgba(16,185,129,0.12);
-    margin-bottom: 24px;
-}
-
-.ai-response {
-    background: #fbfaff;
-    padding: 22px;
-    border-radius: 18px;
-    border: 1px solid #ddd6fe;
-    margin-top: 18px;
-}
-
-.tip {
-    background: #eff6ff;
-    padding: 16px;
-    border-radius: 16px;
-    border: 1px solid #bfdbfe;
-    text-align: center;
-    color: #1d4ed8;
-    font-weight: 700;
-    margin-top: 20px;
-    margin-bottom: 20px;
-}
-
-/* Inputs */
-input {
-    border-radius: 10px !important;
-    border: 1px solid #d1d5db !important;
-    padding: 10px !important;
-}
-
-/* Buttons */
-.stButton button {
-    background: linear-gradient(135deg, #6366f1, #4f46e5) !important;
-    color: white !important;
-    border-radius: 10px !important;
-    font-weight: 600 !important;
-    height: 45px !important;
-    border: none !important;
-}
-
-.stButton button:hover {
-    opacity: 0.92;
-    transform: scale(1.01);
-    transition: 0.2s;
-}
-
-/* Stop duplicated Streamlit text */
-.stButton button::before,
-.stButton button::after,
-section[data-testid="stFileUploader"] button::before,
-section[data-testid="stFileUploader"] button::after,
-div[data-testid="stExpander"] summary::before,
-div[data-testid="stExpander"] summary::after {
-    content: none !important;
-    display: none !important;
-}
-
-/* File uploader */
-section[data-testid="stFileUploader"] label {
-    display: none !important;
-}
-
-section[data-testid="stFileUploader"] button {
-    color: #111827 !important;
-    background: white !important;
-    border: 1px solid #d1d5db !important;
-    border-radius: 10px !important;
-    font-weight: 600 !important;
-}
-
-/* Tabs */
-button[data-baseweb="tab"] {
-    font-weight: 700 !important;
-    border-radius: 12px !important;
-}
-
+.stApp { background: #f6f9ff; }
+.block-container { padding-top: 2rem; padding-left: 2rem; padding-right: 2rem; }
+section[data-testid="stSidebar"] { background: linear-gradient(180deg, #111827 0%, #4f46e5 100%); }
+section[data-testid="stSidebar"] * { color: white !important; }
+.sidebar-logo { font-size: 26px; font-weight: 900; margin-bottom: 30px; line-height: 1.2; }
+.nav-item { padding: 14px 16px; border-radius: 14px; margin-bottom: 10px; font-weight: 600; }
+.nav-active { background: rgba(255,255,255,0.22); }
+.hero { background: linear-gradient(135deg, #6d28d9, #0ea5e9); padding: 34px 38px; border-radius: 26px; color: white; box-shadow: 0 16px 36px rgba(79,70,229,0.25); margin-bottom: 24px; }
+.hero h1 { color: white; font-size: 40px; margin: 0; }
+.hero p { margin-top: 12px; font-size: 16px; color: #e0f2fe; }
+.card { background: white; padding: 24px; border-radius: 22px; border: 1px solid #e5e7eb; box-shadow: 0 12px 30px rgba(15,23,42,0.06); margin-bottom: 24px; }
+.upload-inner { border: 2px dashed #c4b5fd; border-radius: 18px; text-align: center; padding: 32px; background: #fbfaff; margin-bottom: 15px; }
+.pill { display: inline-block; padding: 8px 13px; border-radius: 9px; border: 1px solid #c4b5fd; color: #5b21b6; margin: 4px; font-weight: 600; font-size: 13px; }
+.metric-card { padding: 22px; border-radius: 20px; color: white; min-height: 155px; box-shadow: 0 15px 30px rgba(0,0,0,0.14); margin-bottom: 22px; }
+.metric-title { font-size: 14px; font-weight: 700; opacity: 0.95; }
+.metric-value { font-size: 28px; font-weight: 900; margin-top: 18px; word-break: break-word; }
+.metric-sub { font-size: 13px; margin-top: 10px; opacity: 0.95; }
+.insight { padding: 15px; border-radius: 14px; margin-bottom: 12px; border: 1px solid #e5e7eb; }
+.rec-box { background: linear-gradient(135deg, #ecfdf5, #f0fdf4); padding: 24px; border-radius: 22px; border: 1px solid #bbf7d0; box-shadow: 0 12px 30px rgba(16,185,129,0.12); margin-bottom: 24px; }
+.ai-response { background: #fbfaff; padding: 22px; border-radius: 18px; border: 1px solid #ddd6fe; margin-top: 18px; }
+.tip { background: #eff6ff; padding: 16px; border-radius: 16px; border: 1px solid #bfdbfe; text-align: center; color: #1d4ed8; font-weight: 700; margin-top: 20px; margin-bottom: 20px; }
+input { border-radius: 10px !important; border: 1px solid #d1d5db !important; padding: 10px !important; }
+.stButton button { background: linear-gradient(135deg, #6366f1, #4f46e5) !important; color: white !important; border-radius: 10px !important; font-weight: 600 !important; height: 45px !important; border: none !important; }
+.stButton button:hover { opacity: 0.92; transform: scale(1.01); transition: 0.2s; }
+section[data-testid="stFileUploader"] label { display: none !important; }
+section[data-testid="stFileUploader"] button { color: #111827 !important; background: white !important; border: 1px solid #d1d5db !important; border-radius: 10px !important; font-weight: 600 !important; }
+button[data-baseweb="tab"] { font-weight: 700 !important; border-radius: 12px !important; }
 </style>
 """, unsafe_allow_html=True)
+
+
 # =========================
 # SIDEBAR
 # =========================
 
 with st.sidebar:
     st.markdown('<div class="sidebar-logo">Business<br>Growth AI</div>', unsafe_allow_html=True)
-
     st.markdown(f"**User:** {st.session_state.get('email', st.session_state.get('username', ''))}")
     st.markdown(f"**Plan:** {st.session_state['plan'].title()}")
     st.markdown(f"**Role:** {st.session_state['role'].title()}")
-
     st.markdown("---")
     st.markdown('<div class="nav-item nav-active">Dashboard</div>', unsafe_allow_html=True)
     st.markdown('<div class="nav-item">Forecasting</div>', unsafe_allow_html=True)
     st.markdown('<div class="nav-item">SHAP Explainability</div>', unsafe_allow_html=True)
     st.markdown('<div class="nav-item">AI Assistant</div>', unsafe_allow_html=True)
     st.markdown('<div class="nav-item">Reports</div>', unsafe_allow_html=True)
-
     st.markdown("---")
 
     if st.session_state["plan"] == "starter":
@@ -668,13 +465,12 @@ st.markdown(f"""
 # =========================
 
 st.markdown('<div class="card">', unsafe_allow_html=True)
-
 u1, u2 = st.columns([1, 1])
 
 with u1:
     st.markdown("""
     <div class="upload-inner">
-        <div style="font-size:46px;color:#6d28d9;">⇧</div>
+        <div style="font-size:46px;color:#6d28d9;">⬆️</div>
         <h3>Upload your sales data</h3>
         <p>Upload CSV or Excel file below</p>
     </div>
@@ -683,8 +479,12 @@ with u1:
     uploaded_file = st.file_uploader(
         "Upload sales file",
         type=["csv", "xlsx"],
-        label_visibility="collapsed"
+        label_visibility="collapsed",
+        key="sales_file_upload"
     )
+
+    if uploaded_file is not None:
+        st.success(f"Selected file: {uploaded_file.name}")
 
 with u2:
     st.markdown("""
@@ -697,69 +497,80 @@ with u2:
     <br><br>
     <h3 style="color:#5b21b6;">Smart Column Detection</h3>
     <p>Accepts variations such as Sales, Revenue, Amount, Qty, Units, Order Date, Product Name and more.</p>
+    <br>
+    <h3 style="color:#5b21b6;">Secure Cloud Storage</h3>
+    <p>Uploaded files are stored securely in Supabase Storage under your user account.</p>
     """, unsafe_allow_html=True)
 
 st.markdown('</div>', unsafe_allow_html=True)
 
 
 # =========================
-# SECURE FILE FUNCTIONS
+# SUPABASE STORAGE FILE FUNCTIONS
 # =========================
 
-def secure_user_path(path):
-    resolved_path = Path(path).resolve()
-    resolved_user_dir = USER_DATA_DIR.resolve()
-
-    if resolved_user_dir not in resolved_path.parents and resolved_path != resolved_user_dir:
-        st.error("Unauthorized file access blocked.")
-        st.stop()
-
-    return resolved_path
-
-
 def save_uploaded_file(file):
-    if file is not None:
-        safe_filename = file.name.replace("/", "_").replace("\\", "_")
-        file_path = USER_DATA_DIR / safe_filename
+    user_id = st.session_state["user_id"]
+    safe_filename = file.name.replace("/", "_").replace("\\", "_")
+    storage_path = f"{user_id}/{safe_filename}"
+    file_bytes = file.getvalue()
 
-        with open(file_path, "wb") as f:
-            f.write(file.getbuffer())
+    try:
+        supabase.storage.from_(STORAGE_BUCKET).upload(
+            storage_path,
+            file_bytes,
+            {"content-type": file.type or "application/octet-stream", "upsert": "true"}
+        )
+    except Exception as e:
+        error_text = str(e).lower()
+        if "already exists" in error_text or "duplicate" in error_text:
+            supabase.storage.from_(STORAGE_BUCKET).update(
+                storage_path,
+                file_bytes,
+                {"content-type": file.type or "application/octet-stream"}
+            )
+        else:
+            raise e
 
-        return secure_user_path(file_path)
-
-    return None
+    return storage_path
 
 
 def get_latest_user_file():
-    files = list(USER_DATA_DIR.glob("*.csv")) + list(USER_DATA_DIR.glob("*.xlsx"))
+    user_id = st.session_state["user_id"]
+    files = supabase.storage.from_(STORAGE_BUCKET).list(user_id)
 
     if not files:
         return None
 
-    latest = max(files, key=lambda p: p.stat().st_mtime)
-    return secure_user_path(latest)
+    latest = sorted(
+        files,
+        key=lambda file: file.get("created_at", "") or file.get("updated_at", "") or file.get("name", ""),
+        reverse=True
+    )[0]
+
+    return f"{user_id}/{latest['name']}"
 
 
 def load_data(file):
     if file is not None:
-        saved_path = save_uploaded_file(file)
-        st.success("File uploaded and saved securely to your account.")
-        path = saved_path
-
+        storage_path = save_uploaded_file(file)
+        st.success("File uploaded and saved securely to Supabase Storage.")
     else:
-        latest_file = get_latest_user_file()
+        storage_path = get_latest_user_file()
 
-        if latest_file:
-            st.info(f"Using your previously uploaded file: {latest_file.name}")
-            path = latest_file
+        if storage_path:
+            st.info("Using your previously uploaded file from Supabase Storage.")
         else:
             st.info("No file uploaded yet. Demo sample data is being used.")
-            path = Path("sample_sales.csv")
+            return pd.read_csv("sample_sales.csv")
 
-    if str(path).endswith(".csv"):
-        return pd.read_csv(path)
+    file_bytes = supabase.storage.from_(STORAGE_BUCKET).download(storage_path)
+    file_buffer = BytesIO(file_bytes)
 
-    return pd.read_excel(path, engine="openpyxl")
+    if storage_path.lower().endswith(".csv"):
+        return pd.read_csv(file_buffer)
+
+    return pd.read_excel(file_buffer, engine="openpyxl")
 
 
 def detect_and_clean_columns(df):
@@ -794,12 +605,7 @@ def detect_and_clean_columns(df):
                     break
 
         if match_found is None:
-            fuzzy_match = get_close_matches(
-                standard_col.lower(),
-                clean_columns,
-                n=1,
-                cutoff=0.55
-            )
+            fuzzy_match = get_close_matches(standard_col.lower(), clean_columns, n=1, cutoff=0.55)
             if fuzzy_match:
                 match_found = fuzzy_match[0]
 
@@ -823,11 +629,9 @@ def detect_and_clean_columns(df):
     })
 
     df = df.loc[:, ~df.columns.duplicated()]
-
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce")
     df["Price"] = pd.to_numeric(df["Price"], errors="coerce")
-
     df = df.dropna(subset=["Date", "Quantity", "Price"])
 
     if df.empty:
@@ -851,6 +655,7 @@ def metric(title, value, sub, gradient):
     </div>
     """, unsafe_allow_html=True)
 
+
 def generate_pdf_report(report_summary, recommendation):
     buffer = BytesIO()
 
@@ -865,15 +670,12 @@ def generate_pdf_report(report_summary, recommendation):
 
     styles = getSampleStyleSheet()
     story = []
-
     story.append(Paragraph("AI-Powered Business Growth Report", styles["Title"]))
     story.append(Spacer(1, 16))
-
     story.append(Paragraph("Executive KPI Summary", styles["Heading2"]))
     story.append(Spacer(1, 8))
 
     table_data = [["Metric", "Value"]] + report_summary.values.tolist()
-
     table = Table(table_data, colWidths=[220, 260])
     table.setStyle(TableStyle([
         ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
@@ -886,20 +688,14 @@ def generate_pdf_report(report_summary, recommendation):
 
     story.append(table)
     story.append(Spacer(1, 20))
-
     story.append(Paragraph("Business Recommendation", styles["Heading2"]))
     story.append(Paragraph(recommendation, styles["BodyText"]))
-
     story.append(Spacer(1, 20))
-    story.append(Paragraph(
-        "This report was generated by the AI-Powered Business Growth Platform.",
-        styles["Italic"]
-    ))
-
+    story.append(Paragraph("This report was generated by the AI-Powered Business Growth Platform.", styles["Italic"]))
     doc.build(story)
-
     buffer.seek(0)
     return buffer
+
 
 # =========================
 # LOAD DATA
@@ -911,7 +707,7 @@ try:
     df = enforce_row_limit(df)
     st.success("Data loaded successfully and columns detected automatically.")
 except Exception as e:
-    st.error("Error loading file. Please check your file format.")
+    st.error("Error loading file. Please check your file format or Supabase Storage policies.")
     st.caption(str(e))
     st.stop()
 
@@ -921,7 +717,6 @@ except Exception as e:
 # =========================
 
 st.markdown("### Filter Dashboard")
-
 f1, f2, f3 = st.columns(3)
 
 with f1:
@@ -966,23 +761,19 @@ if filtered_df.empty:
 total_revenue = filtered_df["Total_Sales"].sum()
 total_orders = len(filtered_df)
 avg_order_value = filtered_df["Total_Sales"].mean()
-
 product_revenue = filtered_df.groupby("Product")["Total_Sales"].sum()
 category_revenue = filtered_df.groupby("Category")["Total_Sales"].sum()
 
 best_product = product_revenue.idxmax()
 lowest_product = product_revenue.idxmin()
 top_category = category_revenue.idxmax()
-
 monthly_sales = filtered_df.groupby("Month")["Total_Sales"].sum().sort_index()
 
 growth = None
-
 if len(monthly_sales) > 1 and monthly_sales.iloc[-2] != 0:
     growth = ((monthly_sales.iloc[-1] - monthly_sales.iloc[-2]) / monthly_sales.iloc[-2]) * 100
 
 growth_text = f"{growth:.1f}% vs last month" if growth is not None else "Not enough monthly data"
-
 
 monthly_product_sales = (
     filtered_df.groupby(["Product", "Month"])["Total_Sales"]
@@ -992,7 +783,6 @@ monthly_product_sales = (
 )
 
 growth_products = []
-
 for product in monthly_product_sales["Product"].unique():
     product_df = monthly_product_sales[monthly_product_sales["Product"] == product]
 
@@ -1001,7 +791,6 @@ for product in monthly_product_sales["Product"].unique():
             (product_df["Total_Sales"].iloc[-1] - product_df["Total_Sales"].iloc[-2])
             / product_df["Total_Sales"].iloc[-2]
         ) * 100
-
         growth_products.append((product, product_growth))
 
 if growth_products:
@@ -1011,11 +800,6 @@ else:
     top_growth_product = "Not enough data"
     top_growth_text = "Need at least 2 months of product data"
 
-
-# =========================
-# RECOMMENDATION
-# =========================
-
 recommendation = (
     f"Consider increasing stock or marketing for high-performing products such as {best_product}. "
     f"Your strongest category is {top_category}, so this area may offer the best growth opportunity. "
@@ -1023,45 +807,25 @@ recommendation = (
     f"Also monitor {top_growth_product}, because it may become a future high-value product."
 )
 
-# =========================
-# REPORT SUMMARY
-# =========================
-
 report_summary = pd.DataFrame({
     "Metric": [
-        "Total Revenue",
-        "Total Orders",
-        "Average Order Value",
-        "Best Product",
-        "Lowest Product",
-        "Top Category",
-        "Top Growth Product",
-        "Sales Growth",
-        "Current Plan"
+        "Total Revenue", "Total Orders", "Average Order Value", "Best Product",
+        "Lowest Product", "Top Category", "Top Growth Product", "Sales Growth", "Current Plan"
     ],
     "Value": [
-        f"£{total_revenue:,.2f}",
-        total_orders,
-        f"£{avg_order_value:,.2f}",
-        best_product,
-        lowest_product,
-        top_category,
-        top_growth_text,
-        growth_text,
+        f"£{total_revenue:,.2f}", total_orders, f"£{avg_order_value:,.2f}",
+        best_product, lowest_product, top_category, top_growth_text, growth_text,
         st.session_state["plan"].title()
     ]
 })
+
 
 # =========================
 # TABS
 # =========================
 
 tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "Dashboard",
-    "Forecasting",
-    "AI Insights",
-    "Reports",
-    "Data Preview"
+    "Dashboard", "Forecasting", "AI Insights", "Reports", "Data Preview"
 ])
 
 
@@ -1071,24 +835,18 @@ tab1, tab2, tab3, tab4, tab5 = st.tabs([
 
 with tab1:
     st.markdown("### Key Business Performance")
-    st.caption(
-        "These KPIs summarise revenue, customer activity, average order value, product performance and growth momentum."
-    )
+    st.caption("These KPIs summarise revenue, customer activity, average order value, product performance and growth momentum.")
 
     c1, c2, c3, c4, c5 = st.columns(5)
 
     with c1:
         metric("Total Revenue", f"£{total_revenue:,.2f}", growth_text, "linear-gradient(135deg,#7c3aed,#4f46e5)")
-
     with c2:
         metric("Total Orders", f"{total_orders:,}", "Completed sales records", "linear-gradient(135deg,#0ea5e9,#2563eb)")
-
     with c3:
         metric("Average Order Value", f"£{avg_order_value:,.2f}", "Revenue per order", "linear-gradient(135deg,#34d399,#059669)")
-
     with c4:
         metric("Best Product", best_product, "Highest revenue product", "linear-gradient(135deg,#f59e0b,#f97316)")
-
     with c5:
         metric("Top Growth Product", top_growth_product, top_growth_text, "linear-gradient(135deg,#ec4899,#be185d)")
 
@@ -1096,48 +854,19 @@ with tab1:
 
     with left:
         st.markdown("### Sales Performance Over Time")
-
-        monthly_chart = (
-            filtered_df.groupby("Month", as_index=False)["Total_Sales"]
-            .sum()
-            .sort_values("Month")
-        )
-
+        monthly_chart = filtered_df.groupby("Month", as_index=False)["Total_Sales"].sum().sort_values("Month")
         fig = px.line(monthly_chart, x="Month", y="Total_Sales", markers=True)
-        fig.update_traces(
-            line=dict(width=4, color="#6d28d9"),
-            marker=dict(size=9, color="#6d28d9")
-        )
-        fig.update_layout(
-            height=420,
-            template="plotly_white",
-            xaxis_title="Month",
-            yaxis_title="Revenue (£)",
-            showlegend=False,
-            hovermode="x unified"
-        )
+        fig.update_traces(line=dict(width=4, color="#6d28d9"), marker=dict(size=9, color="#6d28d9"))
+        fig.update_layout(height=420, template="plotly_white", xaxis_title="Month", yaxis_title="Revenue (£)", showlegend=False, hovermode="x unified")
         fig.update_yaxes(tickprefix="£", separatethousands=True)
         st.plotly_chart(fig, use_container_width=True)
 
     with right:
         st.markdown("### Top 10 Products by Revenue")
-
-        product_sales = (
-            filtered_df.groupby("Product", as_index=False)["Total_Sales"]
-            .sum()
-            .sort_values("Total_Sales", ascending=False)
-            .head(10)
-        )
-
+        product_sales = filtered_df.groupby("Product", as_index=False)["Total_Sales"].sum().sort_values("Total_Sales", ascending=False).head(10)
         fig = px.bar(product_sales, x="Total_Sales", y="Product", orientation="h")
         fig.update_traces(marker_color="#2563eb")
-        fig.update_layout(
-            height=420,
-            template="plotly_white",
-            xaxis_title="Revenue (£)",
-            yaxis_title="",
-            showlegend=False
-        )
+        fig.update_layout(height=420, template="plotly_white", xaxis_title="Revenue (£)", yaxis_title="", showlegend=False)
         fig.update_yaxes(autorange="reversed")
         fig.update_xaxes(tickprefix="£", separatethousands=True)
         st.plotly_chart(fig, use_container_width=True)
@@ -1146,65 +875,31 @@ with tab1:
 
     with bottom_left:
         st.markdown("### Revenue by Category")
-
         category_sales = filtered_df.groupby("Category", as_index=False)["Total_Sales"].sum()
-
-        fig = px.pie(
-            category_sales,
-            names="Category",
-            values="Total_Sales",
-            hole=0.50
-        )
+        fig = px.pie(category_sales, names="Category", values="Total_Sales", hole=0.50)
         fig.update_layout(height=420)
         st.plotly_chart(fig, use_container_width=True)
 
     with bottom_right:
         st.markdown("### Product Growth Ranking")
-
         if growth_products:
             growth_df = pd.DataFrame(growth_products, columns=["Product", "Growth_Rate"])
             growth_df = growth_df.sort_values("Growth_Rate", ascending=False).head(10)
-
             fig = px.bar(growth_df, x="Growth_Rate", y="Product", orientation="h")
             fig.update_traces(marker_color="#be185d")
-            fig.update_layout(
-                height=420,
-                template="plotly_white",
-                xaxis_title="Growth Rate (%)",
-                yaxis_title=""
-            )
+            fig.update_layout(height=420, template="plotly_white", xaxis_title="Growth Rate (%)", yaxis_title="")
             fig.update_yaxes(autorange="reversed")
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Not enough monthly product data to calculate growth ranking.")
 
     st.markdown("### Business Insights")
-
     st.markdown(f"""
-    <div class="insight" style="background:#faf5ff;border-color:#ddd6fe;">
-        <strong style="color:#6d28d9;">Highest Revenue Category</strong><br>
-        {top_category} is currently generating the highest revenue.
-    </div>
-
-    <div class="insight" style="background:#ecfdf5;border-color:#bbf7d0;">
-        <strong style="color:#059669;">Top Performing Product</strong><br>
-        {best_product} is the strongest product by total revenue.
-    </div>
-
-    <div class="insight" style="background:#fff7ed;border-color:#fed7aa;">
-        <strong style="color:#ea580c;">Product Requiring Attention</strong><br>
-        {lowest_product} is the lowest performing product.
-    </div>
-
-    <div class="insight" style="background:#fdf2f8;border-color:#fbcfe8;">
-        <strong style="color:#be185d;">Top Growth Product</strong><br>
-        {top_growth_text}
-    </div>
-
-    <div class="insight" style="background:#eff6ff;border-color:#bfdbfe;">
-        <strong style="color:#2563eb;">Sales Growth</strong><br>
-        {growth_text}
-    </div>
+    <div class="insight" style="background:#faf5ff;border-color:#ddd6fe;"><strong style="color:#6d28d9;">Highest Revenue Category</strong><br>{top_category} is currently generating the highest revenue.</div>
+    <div class="insight" style="background:#ecfdf5;border-color:#bbf7d0;"><strong style="color:#059669;">Top Performing Product</strong><br>{best_product} is the strongest product by total revenue.</div>
+    <div class="insight" style="background:#fff7ed;border-color:#fed7aa;"><strong style="color:#ea580c;">Product Requiring Attention</strong><br>{lowest_product} is the lowest performing product.</div>
+    <div class="insight" style="background:#fdf2f8;border-color:#fbcfe8;"><strong style="color:#be185d;">Top Growth Product</strong><br>{top_growth_text}</div>
+    <div class="insight" style="background:#eff6ff;border-color:#bfdbfe;"><strong style="color:#2563eb;">Sales Growth</strong><br>{growth_text}</div>
     """, unsafe_allow_html=True)
 
     st.markdown(f"""
@@ -1225,13 +920,8 @@ with tab2:
     if not feature_allowed("forecasting"):
         st.warning("Unlock Forecasting to predict future revenue and plan business growth.")
         upgrade_button("pro")
-
     else:
-        forecast_method = st.radio(
-            "Choose forecasting method",
-            ["Prophet Forecast", "Simple Linear Forecast"],
-            horizontal=True
-        )
+        forecast_method = st.radio("Choose forecasting method", ["Prophet Forecast", "Simple Linear Forecast"], horizontal=True)
 
         if len(monthly_sales) >= 3:
             forecast_df = monthly_sales.reset_index()
@@ -1239,88 +929,44 @@ with tab2:
 
             if forecast_method == "Prophet Forecast" and PROPHET_AVAILABLE:
                 prophet_df = forecast_df.rename(columns={"Month": "ds", "Total_Sales": "y"})
-
                 model = Prophet()
                 model.fit(prophet_df)
-
                 future = model.make_future_dataframe(periods=3, freq="MS")
                 forecast = model.predict(future)
 
                 forecast_display = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(3)
                 forecast_display = forecast_display.rename(columns={
-                    "ds": "Month",
-                    "yhat": "Forecast Sales",
-                    "yhat_lower": "Lower Estimate",
-                    "yhat_upper": "Upper Estimate"
+                    "ds": "Month", "yhat": "Forecast Sales", "yhat_lower": "Lower Estimate", "yhat_upper": "Upper Estimate"
                 })
-
-                plot_df = forecast[["ds", "yhat"]].rename(columns={
-                    "ds": "Month",
-                    "yhat": "Sales"
-                })
-
+                plot_df = forecast[["ds", "yhat"]].rename(columns={"ds": "Month", "yhat": "Sales"})
                 fig = px.line(plot_df, x="Month", y="Sales", markers=True)
-                fig.update_traces(
-                    line=dict(width=4, color="#10b981"),
-                    marker=dict(size=9, color="#10b981")
-                )
-                fig.update_layout(
-                    height=420,
-                    template="plotly_white",
-                    yaxis_title="Revenue (£)",
-                    xaxis_title="Month"
-                )
+                fig.update_traces(line=dict(width=4, color="#10b981"), marker=dict(size=9, color="#10b981"))
+                fig.update_layout(height=420, template="plotly_white", yaxis_title="Revenue (£)", xaxis_title="Month")
                 fig.update_yaxes(tickprefix="£", separatethousands=True)
-
                 st.plotly_chart(fig, use_container_width=True)
                 st.dataframe(forecast_display, use_container_width=True)
-
             else:
                 if forecast_method == "Prophet Forecast" and not PROPHET_AVAILABLE:
                     st.warning("Prophet is not installed. Showing simple linear forecast instead.")
 
                 forecast_df["t"] = np.arange(len(forecast_df))
-
                 model = LinearRegression()
                 model.fit(forecast_df[["t"]], forecast_df["Total_Sales"])
-
                 future_t = np.arange(len(forecast_df), len(forecast_df) + 3)
                 future_predictions = model.predict(future_t.reshape(-1, 1))
-
                 last_month = forecast_df["Month"].max()
-                future_months = pd.date_range(
-                    start=last_month + pd.DateOffset(months=1),
-                    periods=3,
-                    freq="MS"
-                )
+                future_months = pd.date_range(start=last_month + pd.DateOffset(months=1), periods=3, freq="MS")
+                future_df = pd.DataFrame({"Month": future_months, "Forecast Sales": future_predictions})
 
-                future_df = pd.DataFrame({
-                    "Month": future_months,
-                    "Forecast Sales": future_predictions
-                })
-
-                historical_plot = forecast_df[["Month", "Total_Sales"]].rename(
-                    columns={"Total_Sales": "Sales"}
-                )
+                historical_plot = forecast_df[["Month", "Total_Sales"]].rename(columns={"Total_Sales": "Sales"})
                 future_plot = future_df.rename(columns={"Forecast Sales": "Sales"})
                 forecast_chart = pd.concat([historical_plot, future_plot])
-
                 fig = px.line(forecast_chart, x="Month", y="Sales", markers=True)
-                fig.update_traces(
-                    line=dict(width=4, color="#10b981"),
-                    marker=dict(size=9, color="#10b981")
-                )
-                fig.update_layout(
-                    height=420,
-                    template="plotly_white",
-                    yaxis_title="Revenue (£)",
-                    xaxis_title="Month"
-                )
+                fig.update_traces(line=dict(width=4, color="#10b981"), marker=dict(size=9, color="#10b981"))
+                fig.update_layout(height=420, template="plotly_white", yaxis_title="Revenue (£)", xaxis_title="Month")
                 fig.update_yaxes(tickprefix="£", separatethousands=True)
-
                 st.plotly_chart(fig, use_container_width=True)
                 st.dataframe(future_df, use_container_width=True)
-
         else:
             st.info("At least 3 months of data are needed to generate a forecast.")
 
@@ -1335,53 +981,33 @@ with tab3:
     if not feature_allowed("shap"):
         st.warning("Unlock SHAP Explainability to understand the biggest drivers behind sales performance.")
         upgrade_button("premium")
-
     else:
         st.caption("This explains which factors are most important in predicting sales performance.")
-
         try:
             shap_df = filtered_df[["Product", "Category", "Quantity", "Price", "Total_Sales"]].copy()
-
-            encoded_df = pd.get_dummies(
-                shap_df[["Product", "Category", "Quantity", "Price"]],
-                drop_first=True
-            )
-
+            encoded_df = pd.get_dummies(shap_df[["Product", "Category", "Quantity", "Price"]], drop_first=True)
             target = shap_df["Total_Sales"]
 
             if len(encoded_df) >= 10 and SHAP_AVAILABLE:
                 rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
                 rf_model.fit(encoded_df, target)
-
                 explainer = shap.TreeExplainer(rf_model)
                 shap_values = explainer.shap_values(encoded_df)
-
                 shap_importance = pd.DataFrame({
                     "Feature": encoded_df.columns,
                     "Importance": np.abs(shap_values).mean(axis=0)
                 }).sort_values("Importance", ascending=False).head(10)
-
                 fig = px.bar(shap_importance, x="Importance", y="Feature", orientation="h")
                 fig.update_traces(marker_color="#7c3aed")
-                fig.update_layout(
-                    height=420,
-                    template="plotly_white",
-                    xaxis_title="Average SHAP Importance",
-                    yaxis_title=""
-                )
+                fig.update_layout(height=420, template="plotly_white", xaxis_title="Average SHAP Importance", yaxis_title="")
                 fig.update_yaxes(autorange="reversed")
-
                 st.plotly_chart(fig, use_container_width=True)
-
                 top_driver = shap_importance.iloc[0]["Feature"]
                 st.success(f"Top sales driver detected: {top_driver}")
-
             elif not SHAP_AVAILABLE:
                 st.warning("SHAP is not installed. Add shap to requirements.txt and redeploy.")
-
             else:
                 st.info("Need at least 10 records to generate SHAP explainability.")
-
         except Exception as e:
             st.warning("SHAP explainability could not be generated for this dataset.")
             st.caption(str(e))
@@ -1391,63 +1017,55 @@ with tab3:
     if not feature_allowed("ai_assistant"):
         st.warning("Unlock AI Assistant to get personalised business recommendations from your sales data.")
         upgrade_button("pro")
-
     else:
         st.markdown("Ask a question about your business data.")
-
         with st.form("ai_form"):
-            user_question = st.text_input(
-                "Question",
-                placeholder="Example: How can I improve my sales next month?",
-                label_visibility="collapsed"
-            )
+            user_question = st.text_input("Question", placeholder="Example: How can I improve my sales next month?", label_visibility="collapsed")
             ask_clicked = st.form_submit_button("Ask AI Assistant")
 
         if ask_clicked and user_question:
-            business_summary = f"""
-            Total Revenue: £{total_revenue:,.2f}
-            Total Orders: {total_orders}
-            Average Order Value: £{avg_order_value:,.2f}
-            Best Product: {best_product}
-            Lowest Product: {lowest_product}
-            Top Category: {top_category}
-            Top Growth Product: {top_growth_text}
-            Sales Growth: {growth_text}
-            Recommendation: {recommendation}
-            """
+            if client is None:
+                st.error("OpenAI API key is missing. Add OPENAI_API_KEY in Streamlit Cloud secrets.")
+            else:
+                business_summary = f"""
+                Total Revenue: £{total_revenue:,.2f}
+                Total Orders: {total_orders}
+                Average Order Value: £{avg_order_value:,.2f}
+                Best Product: {best_product}
+                Lowest Product: {lowest_product}
+                Top Category: {top_category}
+                Top Growth Product: {top_growth_text}
+                Sales Growth: {growth_text}
+                Recommendation: {recommendation}
+                """
+                prompt = f"""
+                You are a professional business analyst for a small business owner.
 
-            prompt = f"""
-            You are a professional business analyst for a small business owner.
+                Business summary:
+                {business_summary}
 
-            Business summary:
-            {business_summary}
+                User question:
+                {user_question}
 
-            User question:
-            {user_question}
-
-            Give a clear, practical, easy-to-understand answer with 3 to 5 actionable recommendations.
-            """
-
-            try:
-                with st.spinner("Analysing business data..."):
-                    response = client.chat.completions.create(
-                        model="gpt-4.1-mini",
-                        messages=[{"role": "user", "content": prompt}],
-                        temperature=0.4
-                    )
-
-                    answer = response.choices[0].message.content
-
-                st.markdown(f"""
-                <div class="ai-response">
-                    <strong>AI Response:</strong><br><br>
-                    {answer}
-                </div>
-                """, unsafe_allow_html=True)
-
-            except Exception as e:
-                st.error("AI service error. Please check your OpenAI API key or billing.")
-                st.caption(str(e))
+                Give a clear, practical, easy-to-understand answer with 3 to 5 actionable recommendations.
+                """
+                try:
+                    with st.spinner("Analysing business data..."):
+                        response = client.chat.completions.create(
+                            model="gpt-4.1-mini",
+                            messages=[{"role": "user", "content": prompt}],
+                            temperature=0.4
+                        )
+                        answer = response.choices[0].message.content
+                    st.markdown(f"""
+                    <div class="ai-response">
+                        <strong>AI Response:</strong><br><br>
+                        {answer}
+                    </div>
+                    """, unsafe_allow_html=True)
+                except Exception as e:
+                    st.error("AI service error. Please check your OpenAI API key or billing.")
+                    st.caption(str(e))
 
 
 # =========================
@@ -1456,38 +1074,18 @@ with tab3:
 
 with tab4:
     st.markdown("### Export Reports")
-
     cleaned_csv = filtered_df.to_csv(index=False).encode("utf-8")
     summary_csv = report_summary.to_csv(index=False).encode("utf-8")
-
     d1, d2, d3 = st.columns(3)
 
     with d1:
-        st.download_button(
-            "Download Cleaned Data",
-            data=cleaned_csv,
-            file_name="cleaned_sales_data.csv",
-            mime="text/csv"
-        )
-
+        st.download_button("Download Cleaned Data", data=cleaned_csv, file_name="cleaned_sales_data.csv", mime="text/csv")
     with d2:
-        st.download_button(
-            "Download Executive CSV",
-            data=summary_csv,
-            file_name="executive_sales_report.csv",
-            mime="text/csv"
-        )
-
+        st.download_button("Download Executive CSV", data=summary_csv, file_name="executive_sales_report.csv", mime="text/csv")
     with d3:
         if REPORTLAB_AVAILABLE:
             pdf_report = generate_pdf_report(report_summary, recommendation)
-
-            st.download_button(
-                "Download PDF Report",
-                data=pdf_report,
-                file_name="business_growth_report.pdf",
-                mime="application/pdf"
-            )
+            st.download_button("Download PDF Report", data=pdf_report, file_name="business_growth_report.pdf", mime="application/pdf")
         else:
             st.warning("PDF export is unavailable because reportlab is not installed.")
 
@@ -1498,44 +1096,44 @@ with tab4:
         upgrade_button("pro")
     else:
         if st.button("Generate Executive Summary"):
-            summary_prompt = f"""
-            You are a professional business analyst.
+            if client is None:
+                st.error("OpenAI API key is missing. Add OPENAI_API_KEY in Streamlit Cloud secrets.")
+            else:
+                summary_prompt = f"""
+                You are a professional business analyst.
 
-            Summarise this business performance in clear, simple business language.
+                Summarise this business performance in clear, simple business language.
 
-            Total Revenue: £{total_revenue:,.2f}
-            Total Orders: {total_orders}
-            Average Order Value: £{avg_order_value:,.2f}
-            Best Product: {best_product}
-            Lowest Product: {lowest_product}
-            Top Category: {top_category}
-            Top Growth Product: {top_growth_text}
-            Sales Growth: {growth_text}
+                Total Revenue: £{total_revenue:,.2f}
+                Total Orders: {total_orders}
+                Average Order Value: £{avg_order_value:,.2f}
+                Best Product: {best_product}
+                Lowest Product: {lowest_product}
+                Top Category: {top_category}
+                Top Growth Product: {top_growth_text}
+                Sales Growth: {growth_text}
 
-            Give:
-            1. 5 key insights
-            2. 3 recommendations
-            3. 1 risk to watch
-            """
-
-            try:
-                with st.spinner("Generating executive summary..."):
-                    response = client.chat.completions.create(
-                        model="gpt-4.1-mini",
-                        messages=[{"role": "user", "content": summary_prompt}],
-                        temperature=0.4
-                    )
-
-                st.markdown(f"""
-                <div class="ai-response">
-                    <strong>Executive Summary:</strong><br><br>
-                    {response.choices[0].message.content}
-                </div>
-                """, unsafe_allow_html=True)
-
-            except Exception as e:
-                st.error("AI service error. Please check your OpenAI API key.")
-                st.caption(str(e))
+                Give:
+                1. 5 key insights
+                2. 3 recommendations
+                3. 1 risk to watch
+                """
+                try:
+                    with st.spinner("Generating executive summary..."):
+                        response = client.chat.completions.create(
+                            model="gpt-4.1-mini",
+                            messages=[{"role": "user", "content": summary_prompt}],
+                            temperature=0.4
+                        )
+                    st.markdown(f"""
+                    <div class="ai-response">
+                        <strong>Executive Summary:</strong><br><br>
+                        {response.choices[0].message.content}
+                    </div>
+                    """, unsafe_allow_html=True)
+                except Exception as e:
+                    st.error("AI service error. Please check your OpenAI API key.")
+                    st.caption(str(e))
 
 
 # =========================
