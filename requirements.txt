@@ -2,10 +2,12 @@ streamlit
 pandas
 plotly
 openai
-openpyxl==3.1.5
+supabase
 scikit-learn
 numpy
-prophet
-shap
+openpyxl
 reportlab
-supabase
+fastapi
+uvicorn
+stripe
+python-multipart

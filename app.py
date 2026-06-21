@@ -8,6 +8,7 @@ except Exception:
     REPORTLAB_AVAILABLE = False
 
 from io import BytesIO
+from urllib.parse import urlencode
 
 import streamlit as st
 import pandas as pd
@@ -78,6 +79,21 @@ PLAN_LIMITS = {
 # supabase = normal client for Auth and profiles
 # supabase_admin = service role client for server-side Storage upload/download
 
+def log_error(context, error):
+    """Log full error details to the server console (visible in Streamlit Cloud logs),
+    while keeping user-facing messages generic and safe."""
+    print(f"[ERROR] {context}: {error}")
+
+
+def show_error(user_message, context, error):
+    """Show a clean, non-technical message to the user and log the real error server-side.
+    Only show raw exception details in the UI when DEBUG_MODE is enabled in secrets."""
+    log_error(context, error)
+    st.error(user_message)
+    if st.secrets.get("DEBUG_MODE", False):
+        st.caption(f"Debug detail: {error}")
+
+
 try:
     supabase = create_client(
         st.secrets["SUPABASE_URL"],
@@ -90,7 +106,10 @@ try:
     )
 
 except Exception as e:
-    st.error(f"Supabase connection error: {e}")
+    show_error(
+        "We couldn't connect to the database. Please try again shortly, or contact support if this continues.",
+        "Supabase connection error", e
+    )
     supabase = None
     supabase_admin = None
 
@@ -123,17 +142,28 @@ def enforce_row_limit(df):
 
 
 def upgrade_button(plan_name):
+    """Show a Stripe upgrade button and attach the logged-in Supabase user id.
+    The webhook will use client_reference_id to update profiles.plan.
+    """
     key = f"STRIPE_{plan_name.upper()}_LINK"
     link = st.secrets.get(key, "")
 
-    if link:
+    if not link:
+        st.info(f"{plan_name.title()} payment link not added yet.")
+        return
+
+    user_id = st.session_state.get("user_id")
+
+    if user_id:
+        separator = "&" if "?" in link else "?"
+        link = f"{link}{separator}{urlencode({'client_reference_id': user_id, 'plan': plan_name.lower()})}"
         st.link_button(
             f"Upgrade to {plan_name.title()}",
             link,
             use_container_width=True
         )
     else:
-        st.info(f"{plan_name.title()} payment link not added yet.")
+        st.info(f"Login first to upgrade to {plan_name.title()}.")
 
 
 # =========================
@@ -227,8 +257,10 @@ def ensure_user_profile(user_id, business_name=""):
             return result.data[0]
 
     except Exception as e:
+        log_error("ensure_user_profile insert", e)
         st.warning("Profile could not be created automatically.")
-        st.caption(str(e))
+        if st.secrets.get("DEBUG_MODE", False):
+            st.caption(f"Debug detail: {e}")
 
     return {"id": user_id, "plan": "starter", "business_name": business_name}
 
@@ -309,7 +341,10 @@ def login():
                         st.rerun()
 
                     except Exception as e:
-                        st.error(f"Login error: {e}")
+                        log_error("Login", e)
+                        st.error("We couldn't log you in. Please check your email and password and try again.")
+                        if st.secrets.get("DEBUG_MODE", False):
+                            st.caption(f"Debug detail: {e}")
 
         with tab_signup:
             st.markdown("### Create a new account")
@@ -334,14 +369,13 @@ def login():
                             try:
                                 ensure_user_profile(response.user.id, business_name)
                             except Exception as e:
+                                log_error("Signup ensure_user_profile", e)
                                 st.warning("Account created, but profile was not created automatically.")
-                                st.caption(str(e))
 
                             st.success("Account created. Please log in now.")
 
                     except Exception as e:
-                        st.error("Could not create account.")
-                        st.caption(str(e))
+                        show_error("We couldn't create your account. Please try again.", "Signup", e)
 
         with tab_reset:
             st.markdown("### Reset your password")
@@ -353,11 +387,10 @@ def login():
                     st.error("Please enter your email address.")
                 else:
                     try:
-                        supabase.auth.reset_password_email(reset_email.strip().lower())
+                        supabase.auth.reset_password_for_email(reset_email.strip().lower())
                         st.success("Password reset email sent. Please check your inbox.")
                     except Exception as e:
-                        st.error("Could not send password reset email.")
-                        st.caption(str(e))
+                        show_error("We couldn't send the password reset email. Please try again.", "Password reset", e)
 
 
 # =========================
@@ -426,6 +459,15 @@ with st.sidebar:
     st.markdown(f"**User:** {st.session_state.get('email', st.session_state.get('username', ''))}")
     st.markdown(f"**Plan:** {st.session_state['plan'].title()}")
     st.markdown(f"**Role:** {st.session_state['role'].title()}")
+
+    if st.button("Refresh Plan"):
+        try:
+            st.session_state["plan"] = get_user_plan(st.session_state["user_id"]).lower()
+            st.success("Plan refreshed.")
+            st.rerun()
+        except Exception as e:
+            show_error("We couldn't refresh your plan right now.", "Refresh plan", e)
+
     st.markdown("---")
     st.markdown('<div class="nav-item nav-active">Dashboard</div>', unsafe_allow_html=True)
     st.markdown('<div class="nav-item">Forecasting</div>', unsafe_allow_html=True)
@@ -510,6 +552,34 @@ st.markdown('</div>', unsafe_allow_html=True)
 
 
 # =========================
+# DEMO DATA FALLBACK
+# =========================
+
+def create_demo_sales_data():
+    """Built-in sample data so the app still works if sample_sales.csv is not deployed."""
+    dates = pd.date_range(start="2026-01-01", periods=90, freq="D")
+    products = ["Laptop Stand", "Wireless Mouse", "Keyboard", "USB-C Hub", "Notebook"]
+    categories = ["Accessories", "Accessories", "Accessories", "Electronics", "Stationery"]
+
+    rows = []
+    rng = np.random.default_rng(42)
+    for date in dates:
+        for product, category in zip(products, categories):
+            quantity = int(rng.integers(1, 8))
+            unit_price = float(rng.choice([8.99, 12.99, 19.99, 24.99, 39.99]))
+            unit_cost = round(unit_price * float(rng.uniform(0.45, 0.7)), 2)
+            rows.append({
+                "Date": date,
+                "Product": product,
+                "Category": category,
+                "Quantity": quantity,
+                "Unit Price": unit_price,
+                "Cost": unit_cost,
+            })
+
+    return pd.DataFrame(rows)
+
+# =========================
 # SUPABASE STORAGE FILE FUNCTIONS
 # =========================
 
@@ -566,7 +636,10 @@ def load_data(file):
             st.info("Using your previously uploaded file from Supabase Storage.")
         else:
             st.info("No file uploaded yet. Demo sample data is being used.")
-            return pd.read_csv("sample_sales.csv")
+            try:
+                return pd.read_csv("sample_sales.csv")
+            except Exception:
+                return create_demo_sales_data()
 
     file_bytes = supabase_admin.storage.from_(STORAGE_BUCKET).download(storage_path)
     file_buffer = BytesIO(file_bytes)
@@ -578,18 +651,25 @@ def load_data(file):
 
 
 def detect_and_clean_columns(df):
+    """Detect common sales-data column names and clean the dataset.
+
+    Important improvement:
+    - Unit price and total revenue are treated differently.
+    - If the uploaded file has a total sales/revenue column, the app does NOT multiply it by Quantity again.
+    - If the uploaded file has a unit price column, Total_Sales = Quantity * Unit_Price.
+    """
     original_columns = list(df.columns)
     clean_columns = [str(col).lower().strip().replace("_", " ") for col in original_columns]
     column_lookup = dict(zip(clean_columns, original_columns))
-
-    required_columns = ["Date", "Product", "Category", "Quantity", "Price"]
 
     column_mapping = {
         "Date": ["date", "order date", "invoice date", "transaction date", "sale date", "purchase date", "created date"],
         "Product": ["product", "item", "product name", "item name", "description", "pizza type", "service", "menu item", "sku", "stock item"],
         "Category": ["category", "type", "department", "branch", "location", "store", "section", "group", "class", "product category"],
         "Quantity": ["quantity", "qty", "units", "items sold", "number sold", "order quantity", "sold quantity", "count"],
-        "Price": ["price", "sales", "amount", "revenue", "total", "total sales", "sale amount", "order value", "value", "cost", "unit price"]
+        "Unit_Price": ["unit price", "price", "selling price", "item price", "retail price", "sale price"],
+        "Revenue": ["sales", "revenue", "amount", "total", "total sales", "sale amount", "order value", "value", "line total", "net sales", "gross sales"],
+        "Cost": ["cost", "unit cost", "cogs", "cost of goods", "cost price", "purchase price", "wholesale cost", "supplier cost"],
     }
 
     detected_columns = {}
@@ -609,14 +689,18 @@ def detect_and_clean_columns(df):
                     break
 
         if match_found is None:
-            fuzzy_match = get_close_matches(standard_col.lower(), clean_columns, n=1, cutoff=0.55)
+            fuzzy_match = get_close_matches(standard_col.lower().replace("_", " "), clean_columns, n=1, cutoff=0.58)
             if fuzzy_match:
                 match_found = fuzzy_match[0]
 
         if match_found:
             detected_columns[standard_col] = column_lookup[match_found]
 
-    missing = [col for col in required_columns if col not in detected_columns]
+    required_base = ["Date", "Product", "Category", "Quantity"]
+    missing = [col for col in required_base if col not in detected_columns]
+
+    if "Unit_Price" not in detected_columns and "Revenue" not in detected_columns:
+        missing.append("Unit Price or Revenue/Sales")
 
     if missing:
         st.error(f"Missing required columns: {', '.join(missing)}")
@@ -624,19 +708,47 @@ def detect_and_clean_columns(df):
         st.write(original_columns)
         st.stop()
 
-    df = df.rename(columns={
+    has_cost_column = "Cost" in detected_columns
+    has_unit_price = "Unit_Price" in detected_columns
+    has_revenue = "Revenue" in detected_columns
+
+    rename_map = {
         detected_columns["Date"]: "Date",
         detected_columns["Product"]: "Product",
         detected_columns["Category"]: "Category",
         detected_columns["Quantity"]: "Quantity",
-        detected_columns["Price"]: "Price"
-    })
+    }
+    if has_unit_price:
+        rename_map[detected_columns["Unit_Price"]] = "Unit_Price"
+    if has_revenue:
+        rename_map[detected_columns["Revenue"]] = "Revenue"
+    if has_cost_column:
+        rename_map[detected_columns["Cost"]] = "Cost"
 
+    df = df.rename(columns=rename_map)
     df = df.loc[:, ~df.columns.duplicated()]
+
+    rows_before = len(df)
+
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce")
-    df["Price"] = pd.to_numeric(df["Price"], errors="coerce")
-    df = df.dropna(subset=["Date", "Quantity", "Price"])
+
+    if has_unit_price:
+        df["Unit_Price"] = pd.to_numeric(df["Unit_Price"], errors="coerce")
+    if has_revenue:
+        df["Revenue"] = pd.to_numeric(df["Revenue"], errors="coerce")
+    if has_cost_column:
+        df["Cost"] = pd.to_numeric(df["Cost"], errors="coerce")
+
+    required_for_cleaning = ["Date", "Quantity"]
+    if has_unit_price:
+        required_for_cleaning.append("Unit_Price")
+    elif has_revenue:
+        required_for_cleaning.append("Revenue")
+
+    df = df.dropna(subset=required_for_cleaning)
+    rows_after_required = len(df)
+    rows_dropped = rows_before - rows_after_required
 
     if df.empty:
         st.error("No valid data found after cleaning.")
@@ -645,9 +757,23 @@ def detect_and_clean_columns(df):
     df["Product"] = df["Product"].astype(str).str.strip()
     df["Category"] = df["Category"].astype(str).str.strip()
     df["Month"] = df["Date"].dt.to_period("M").dt.to_timestamp()
-    df["Total_Sales"] = df["Quantity"] * df["Price"]
 
-    return df, detected_columns
+    if has_revenue:
+        df["Total_Sales"] = df["Revenue"]
+        if has_unit_price:
+            st.caption("Both unit price and revenue columns were detected. Revenue/Sales is being used for Total Sales to avoid double-counting.")
+    else:
+        df["Total_Sales"] = df["Quantity"] * df["Unit_Price"]
+
+    if has_cost_column:
+        df["Total_Cost"] = df["Quantity"] * df["Cost"]
+        df["Profit"] = df["Total_Sales"] - df["Total_Cost"]
+        df.loc[df["Cost"].isna(), ["Total_Cost", "Profit"]] = np.nan
+
+    detected_columns["_has_cost_column"] = has_cost_column
+    detected_columns["_sales_source"] = "Revenue/Sales column" if has_revenue else "Quantity × Unit Price"
+
+    return df, detected_columns, rows_dropped
 
 
 def metric(title, value, sub, gradient):
@@ -707,12 +833,19 @@ def generate_pdf_report(report_summary, recommendation):
 
 try:
     raw_df = load_data(uploaded_file)
-    df, detected_columns = detect_and_clean_columns(raw_df)
+    df, detected_columns, rows_dropped = detect_and_clean_columns(raw_df)
     df = enforce_row_limit(df)
     st.success("Data loaded successfully and columns detected automatically.")
+    if rows_dropped > 0:
+        st.warning(
+            f"{rows_dropped:,} row(s) were skipped because of missing or invalid Date, "
+            f"Quantity, or Price values. Double-check your source file if this number looks high."
+        )
 except Exception as e:
-    st.error("Error loading file. Please check your file format or Supabase Storage policies.")
-    st.caption(str(e))
+    show_error(
+        "We couldn't load your file. Please check that it's a valid CSV/Excel file with the required columns.",
+        "Data load", e
+    )
     st.stop()
 
 
@@ -811,16 +944,50 @@ recommendation = (
     f"Also monitor {top_growth_product}, because it may become a future high-value product."
 )
 
-report_summary = pd.DataFrame({
-    "Metric": [
-        "Total Revenue", "Total Orders", "Average Order Value", "Best Product",
-        "Lowest Product", "Top Category", "Top Growth Product", "Sales Growth", "Current Plan"
-    ],
-    "Value": [
-        f"£{total_revenue:,.2f}", total_orders, f"£{avg_order_value:,.2f}",
-        best_product, lowest_product, top_category, top_growth_text, growth_text,
-        st.session_state["plan"].title()
+# Profit/margin metrics - only available when the uploaded data included a Cost column.
+has_cost_column = detected_columns.get("_has_cost_column", False)
+total_profit = None
+profit_margin_pct = None
+most_profitable_product = None
+
+if has_cost_column and filtered_df["Profit"].notna().any():
+    profit_rows = filtered_df.dropna(subset=["Profit"])
+    total_profit = profit_rows["Profit"].sum()
+    profit_revenue_base = profit_rows["Total_Sales"].sum()
+
+    if profit_revenue_base != 0:
+        profit_margin_pct = (total_profit / profit_revenue_base) * 100
+
+    product_profit = profit_rows.groupby("Product")["Profit"].sum()
+    if not product_profit.empty:
+        most_profitable_product = product_profit.idxmax()
+
+    recommendation += (
+        f" Your overall profit margin is {profit_margin_pct:.1f}%, "
+        f"with {most_profitable_product} being your most profitable product overall."
+    ) if profit_margin_pct is not None and most_profitable_product else ""
+
+report_summary_metrics = [
+    "Total Revenue", "Total Orders", "Average Order Value", "Best Product",
+    "Lowest Product", "Top Category", "Top Growth Product", "Sales Growth", "Current Plan"
+]
+report_summary_values = [
+    f"£{total_revenue:,.2f}", total_orders, f"£{avg_order_value:,.2f}",
+    best_product, lowest_product, top_category, top_growth_text, growth_text,
+    st.session_state["plan"].title()
+]
+
+if total_profit is not None:
+    report_summary_metrics[2:2] = ["Total Profit", "Profit Margin", "Most Profitable Product"]
+    report_summary_values[2:2] = [
+        f"£{total_profit:,.2f}",
+        f"{profit_margin_pct:.1f}%" if profit_margin_pct is not None else "N/A",
+        most_profitable_product or "N/A",
     ]
+
+report_summary = pd.DataFrame({
+    "Metric": report_summary_metrics,
+    "Value": report_summary_values
 })
 
 
@@ -841,7 +1008,11 @@ with tab1:
     st.markdown("### Key Business Performance")
     st.caption("These KPIs summarise revenue, customer activity, average order value, product performance and growth momentum.")
 
-    c1, c2, c3, c4, c5 = st.columns(5)
+    if total_profit is not None:
+        c1, c2, c3, c4, c5, c6 = st.columns(6)
+    else:
+        c1, c2, c3, c4, c5 = st.columns(5)
+        c6 = None
 
     with c1:
         metric("Total Revenue", f"£{total_revenue:,.2f}", growth_text, "linear-gradient(135deg,#7c3aed,#4f46e5)")
@@ -853,6 +1024,16 @@ with tab1:
         metric("Best Product", best_product, "Highest revenue product", "linear-gradient(135deg,#f59e0b,#f97316)")
     with c5:
         metric("Top Growth Product", top_growth_product, top_growth_text, "linear-gradient(135deg,#ec4899,#be185d)")
+    if c6 is not None:
+        with c6:
+            margin_sub = f"{profit_margin_pct:.1f}% margin" if profit_margin_pct is not None else "Margin unavailable"
+            metric("Total Profit", f"£{total_profit:,.2f}", margin_sub, "linear-gradient(135deg,#14b8a6,#0d9488)")
+
+    if not has_cost_column:
+        st.caption(
+            "Tip: add a 'Cost' column to your sales file to unlock profit and margin tracking, "
+            "not just revenue."
+        )
 
     left, right = st.columns(2)
 
@@ -988,8 +1169,14 @@ with tab3:
     else:
         st.caption("This explains which factors are most important in predicting sales performance.")
         try:
-            shap_df = filtered_df[["Product", "Category", "Quantity", "Price", "Total_Sales"]].copy()
-            encoded_df = pd.get_dummies(shap_df[["Product", "Category", "Quantity", "Price"]], drop_first=True)
+            shap_features = ["Product", "Category", "Quantity"]
+            if "Unit_Price" in filtered_df.columns:
+                shap_features.append("Unit_Price")
+            if "Revenue" in filtered_df.columns:
+                shap_features.append("Revenue")
+
+            shap_df = filtered_df[shap_features + ["Total_Sales"]].copy()
+            encoded_df = pd.get_dummies(shap_df[shap_features], drop_first=True)
             target = shap_df["Total_Sales"]
 
             if len(encoded_df) >= 10 and SHAP_AVAILABLE:
@@ -1013,8 +1200,10 @@ with tab3:
             else:
                 st.info("Need at least 10 records to generate SHAP explainability.")
         except Exception as e:
+            log_error("SHAP explainability", e)
             st.warning("SHAP explainability could not be generated for this dataset.")
-            st.caption(str(e))
+            if st.secrets.get("DEBUG_MODE", False):
+                st.caption(f"Debug detail: {e}")
 
     st.markdown("## AI Business Assistant")
 
@@ -1069,7 +1258,9 @@ with tab3:
                     """, unsafe_allow_html=True)
                 except Exception as e:
                     st.error("AI service error. Please check your OpenAI API key or billing.")
-                    st.caption(str(e))
+                    log_error("AI Business Assistant", e)
+                    if st.secrets.get("DEBUG_MODE", False):
+                        st.caption(f"Debug detail: {e}")
 
 
 # =========================
@@ -1137,7 +1328,9 @@ with tab4:
                     """, unsafe_allow_html=True)
                 except Exception as e:
                     st.error("AI service error. Please check your OpenAI API key.")
-                    st.caption(str(e))
+                    log_error("AI Executive Summary", e)
+                    if st.secrets.get("DEBUG_MODE", False):
+                        st.caption(f"Debug detail: {e}")
 
 
 # =========================
