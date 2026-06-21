@@ -56,9 +56,9 @@ app = FastAPI(title="Stripe Supabase Plan Webhook")
 #     "price_1ABCpremium": "premium",
 # }
 PRICE_ID_TO_PLAN = {
-    "price_REPLACE_WITH_STARTER_PRICE_ID": "starter",
-    "price_REPLACE_WITH_PRO_PRICE_ID": "pro",
-    "price_REPLACE_WITH_PREMIUM_PRICE_ID": "premium",
+    "https://buy.stripe.com/test_4gM6oI7AC6rVfX1fEY4Vy00": "starter",
+    "https://buy.stripe.com/test_6oU7sM5sucQjh152Sc4Vy02": "pro",
+    "https://buy.stripe.com/test_9B6fZi8EG4jN4ej3Wg4Vy03": "premium",
 }
 
 
