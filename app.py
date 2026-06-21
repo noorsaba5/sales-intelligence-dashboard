@@ -1,358 +1,282 @@
+from io import BytesIO
+from urllib.parse import urlencode
+
+import numpy as np
+import pandas as pd
+import plotly.express as px
+import streamlit as st
+from difflib import get_close_matches
+from openai import OpenAI
+from sklearn.linear_model import LinearRegression
+from supabase import create_client
+
 try:
-    from reportlab.lib.pagesizes import A4
-    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle
-    from reportlab.lib.styles import getSampleStyleSheet
     from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.styles import getSampleStyleSheet
+    from reportlab.platypus import Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
     REPORTLAB_AVAILABLE = True
 except Exception:
     REPORTLAB_AVAILABLE = False
 
-from io import BytesIO
-from urllib.parse import urlencode
-
-import streamlit as st
-import pandas as pd
-import plotly.express as px
-from openai import OpenAI
-from supabase import create_client
-from difflib import get_close_matches
-from sklearn.linear_model import LinearRegression
-from sklearn.ensemble import RandomForestRegressor
-import numpy as np
-
-try:
-    from prophet import Prophet
-    PROPHET_AVAILABLE = True
-except Exception:
-    PROPHET_AVAILABLE = False
-
-try:
-    import shap
-    SHAP_AVAILABLE = True
-except Exception:
-    SHAP_AVAILABLE = False
-
-
 # =========================
-# PAGE CONFIG
+# APP CONFIG
 # =========================
 
 st.set_page_config(
     page_title="AI-Powered Business Growth Platform",
     page_icon="🚀",
-    layout="wide"
+    layout="wide",
 )
-
-
-# =========================
-# PRODUCT SETTINGS
-# =========================
 
 APP_NAME = "AI-Powered Business Growth Platform"
 STORAGE_BUCKET = "user-files"
 
+# Keep these names until payment is fully tested. Later you can rename starter -> free.
 PLAN_LIMITS = {
+    "starter": {"rows": 500, "forecasting": False, "ai": False, "shap": False},
+    "pro": {"rows": 5000, "forecasting": True, "ai": True, "shap": False},
+    "premium": {"rows": 50000, "forecasting": True, "ai": True, "shap": True},
+}
+
+PRICING = {
     "starter": {
-        "max_rows": 500,
-        "forecasting": False,
-        "ai_assistant": False,
-        "shap": False,
+        "price": "£9/month",
+        "features": ["Up to 500 rows", "Dashboard", "Product insights", "CSV/PDF reports"],
     },
     "pro": {
-        "max_rows": 5000,
-        "forecasting": True,
-        "ai_assistant": True,
-        "shap": False,
+        "price": "£19/month",
+        "features": ["Up to 5,000 rows", "Forecasting", "AI Assistant", "Executive summaries"],
     },
     "premium": {
-        "max_rows": 50000,
-        "forecasting": True,
-        "ai_assistant": True,
-        "shap": True,
+        "price": "£39/month",
+        "features": ["Up to 50,000 rows", "SHAP explainability", "Advanced analytics", "Premium insights"],
     },
 }
 
+# =========================
+# BASIC STYLES
+# =========================
+
+st.markdown(
+    """
+<style>
+.stApp { background: #f6f9ff; }
+.block-container { padding-top: 2rem; padding-left: 2rem; padding-right: 2rem; }
+section[data-testid="stSidebar"] { background: linear-gradient(180deg, #111827 0%, #4f46e5 100%); }
+section[data-testid="stSidebar"] * { color: white !important; }
+.hero { background: linear-gradient(135deg, #6d28d9, #0ea5e9); padding: 30px 36px; border-radius: 24px; color: white; box-shadow: 0 14px 30px rgba(79,70,229,0.25); margin-bottom: 24px; }
+.hero h1 { color: white; font-size: 38px; margin: 0; }
+.hero p { color: #e0f2fe; }
+.card { background: white; padding: 24px; border-radius: 22px; border: 1px solid #e5e7eb; box-shadow: 0 12px 30px rgba(15,23,42,0.06); margin-bottom: 24px; }
+.upload-inner { border: 2px dashed #c4b5fd; border-radius: 18px; text-align: center; padding: 32px; background: #fbfaff; margin-bottom: 15px; }
+.pill { display: inline-block; padding: 8px 13px; border-radius: 9px; border: 1px solid #c4b5fd; color: #5b21b6; margin: 4px; font-weight: 600; font-size: 13px; }
+.metric-card { padding: 20px; border-radius: 18px; color: white; min-height: 140px; box-shadow: 0 12px 25px rgba(0,0,0,0.14); margin-bottom: 18px; }
+.metric-title { font-size: 14px; font-weight: 700; opacity: 0.95; }
+.metric-value { font-size: 26px; font-weight: 900; margin-top: 14px; word-break: break-word; }
+.metric-sub { font-size: 13px; margin-top: 8px; opacity: 0.95; }
+.insight { padding: 15px; border-radius: 14px; margin-bottom: 12px; border: 1px solid #e5e7eb; }
+.rec-box { background: linear-gradient(135deg, #ecfdf5, #f0fdf4); padding: 22px; border-radius: 20px; border: 1px solid #bbf7d0; box-shadow: 0 12px 30px rgba(16,185,129,0.12); margin-bottom: 24px; }
+.ai-response { background: #fbfaff; padding: 22px; border-radius: 18px; border: 1px solid #ddd6fe; margin-top: 18px; }
+.stButton button { background: linear-gradient(135deg, #6366f1, #4f46e5) !important; color: white !important; border-radius: 10px !important; font-weight: 600 !important; min-height: 42px !important; border: none !important; }
+section[data-testid="stFileUploader"] label { display: none !important; }
+</style>
+""",
+    unsafe_allow_html=True,
+)
 
 # =========================
-# SUPABASE CLIENTS
+# CONNECTIONS
 # =========================
-# supabase = normal client for Auth and profiles
-# supabase_admin = service role client for server-side Storage upload/download
 
-def log_error(context, error):
-    """Log full error details to the server console (visible in Streamlit Cloud logs),
-    while keeping user-facing messages generic and safe."""
+def debug_enabled() -> bool:
+    try:
+        return bool(st.secrets.get("DEBUG_MODE", False))
+    except Exception:
+        return False
+
+
+def log_error(context: str, error: Exception):
     print(f"[ERROR] {context}: {error}")
 
 
-def show_error(user_message, context, error):
-    """Show a clean, non-technical message to the user and log the real error server-side.
-    Only show raw exception details in the UI when DEBUG_MODE is enabled in secrets."""
+def show_error(message: str, context: str, error: Exception):
     log_error(context, error)
-    st.error(user_message)
-    if st.secrets.get("DEBUG_MODE", False):
+    st.error(message)
+    if debug_enabled():
         st.caption(f"Debug detail: {error}")
 
 
 try:
-    supabase = create_client(
-        st.secrets["SUPABASE_URL"],
-        st.secrets["SUPABASE_ANON_KEY"]
-    )
-
-    supabase_admin = create_client(
-        st.secrets["SUPABASE_URL"],
-        st.secrets["SUPABASE_SERVICE_ROLE_KEY"]
-    )
-
+    supabase = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_ANON_KEY"])
+    supabase_admin = create_client(st.secrets["SUPABASE_URL"], st.secrets["SUPABASE_SERVICE_ROLE_KEY"])
 except Exception as e:
-    show_error(
-        "We couldn't connect to the database. Please try again shortly, or contact support if this continues.",
-        "Supabase connection error", e
-    )
     supabase = None
     supabase_admin = None
+    st.error("Supabase connection failed. Check Streamlit secrets.")
+    if debug_enabled():
+        st.caption(str(e))
 
+api_key = st.secrets.get("OPENAI_API_KEY", "")
+client = OpenAI(api_key=api_key) if api_key else None
 
 # =========================
-# HELPER FUNCTIONS
+# AUTH + PLAN HELPERS
 # =========================
 
-def get_current_plan():
+def current_plan() -> str:
     return st.session_state.get("plan", "starter").lower()
 
 
-def feature_allowed(feature_name):
-    plan = get_current_plan()
-    return PLAN_LIMITS.get(plan, PLAN_LIMITS["starter"]).get(feature_name, False)
+def feature_allowed(feature: str) -> bool:
+    return bool(PLAN_LIMITS.get(current_plan(), PLAN_LIMITS["starter"]).get(feature, False))
 
 
-def enforce_row_limit(df):
-    plan = get_current_plan()
-    limit = PLAN_LIMITS.get(plan, PLAN_LIMITS["starter"])["max_rows"]
-
-    if len(df) > limit:
-        st.warning(
-            f"Your {plan.title()} plan allows up to {limit:,} rows. "
-            f"Only the first {limit:,} rows are being analysed."
-        )
-        return df.head(limit)
-
-    return df
+def get_user_plan(user_id: str) -> str:
+    try:
+        result = supabase.table("profiles").select("plan").eq("id", user_id).single().execute()
+        if result.data and result.data.get("plan"):
+            return result.data["plan"].lower()
+    except Exception:
+        pass
+    return "starter"
 
 
-def upgrade_button(plan_name):
-    """Show a Stripe upgrade button and attach the logged-in Supabase user id.
-    The webhook will use client_reference_id to update profiles.plan.
-    """
+def ensure_user_profile(user_id: str, business_name: str = "", email: str = ""):
+    try:
+        existing = supabase.table("profiles").select("id, plan").eq("id", user_id).single().execute()
+        if existing.data:
+            return existing.data
+    except Exception:
+        pass
+
+    payload = {"id": user_id, "plan": "starter", "business_name": business_name}
+    if email:
+        payload["email"] = email
+
+    try:
+        created = supabase.table("profiles").insert(payload).execute()
+        if created.data:
+            return created.data[0]
+    except Exception as e:
+        log_error("ensure_user_profile", e)
+
+    return payload
+
+
+def set_login_session(user):
+    ensure_user_profile(user.id, email=user.email)
+    st.session_state["logged_in"] = True
+    st.session_state["user"] = user
+    st.session_state["user_id"] = user.id
+    st.session_state["email"] = user.email
+    st.session_state["role"] = "customer"
+    st.session_state["plan"] = get_user_plan(user.id)
+
+
+def refresh_plan():
+    user_id = st.session_state.get("user_id")
+    if user_id:
+        st.session_state["plan"] = get_user_plan(user_id)
+
+
+def logout():
+    try:
+        if supabase:
+            supabase.auth.sign_out()
+    except Exception:
+        pass
+    st.session_state.clear()
+    st.session_state["logged_in"] = False
+    st.rerun()
+
+
+def upgrade_button(plan_name: str):
     key = f"STRIPE_{plan_name.upper()}_LINK"
     link = st.secrets.get(key, "")
-
     if not link:
         st.info(f"{plan_name.title()} payment link not added yet.")
         return
 
     user_id = st.session_state.get("user_id")
+    if not user_id:
+        st.info("Log in first to upgrade.")
+        return
 
-    if user_id:
-        separator = "&" if "?" in link else "?"
-        link = f"{link}{separator}{urlencode({'client_reference_id': user_id, 'plan': plan_name.lower()})}"
-        st.link_button(
-            f"Upgrade to {plan_name.title()}",
-            link,
-            use_container_width=True
-        )
+    separator = "&" if "?" in link else "?"
+    link = f"{link}{separator}{urlencode({'client_reference_id': user_id})}"
+    st.link_button(f"Upgrade to {plan_name.title()}", link, use_container_width=True)
+
+
+def require_upgrade(feature_title: str, plan_name: str):
+    st.warning(f"{feature_title} is available on the {plan_name.title()} plan.")
+    if plan_name == "pro":
+        upgrade_button("pro")
+        upgrade_button("premium")
     else:
-        st.info(f"Login first to upgrade to {plan_name.title()}.")
-
+        upgrade_button("premium")
 
 # =========================
-# LANDING PAGE + LOGIN
+# LOGIN PAGE
 # =========================
 
 def landing_page():
     st.markdown(f"# {APP_NAME}")
-    st.markdown(
-        "A SaaS-style analytics platform that helps small businesses turn sales data "
-        "into KPIs, forecasts, growth opportunities, AI recommendations and executive reports."
-    )
-
-    st.markdown("### Pricing Plans")
-
+    st.write("Turn sales data into KPIs, forecasts, AI recommendations and executive reports.")
     p1, p2, p3 = st.columns(3)
-
     with p1:
-        st.markdown("#### Starter")
-        st.markdown("### £9/month")
-        st.markdown("- Up to 500 rows\n- Sales dashboard\n- Product insights\n- Download reports")
-        upgrade_button("starter")
-
+        st.markdown("### Starter")
+        st.markdown("## £9/month")
+        st.write("Basic dashboards and reports.")
     with p2:
-        st.markdown("#### Pro")
-        st.markdown("### £19/month")
-        st.markdown("- Up to 5,000 rows\n- Forecasting\n- AI Assistant\n- Executive reports")
-        upgrade_button("pro")
-
+        st.markdown("### Pro")
+        st.markdown("## £19/month")
+        st.write("Forecasting and AI assistant.")
     with p3:
-        st.markdown("#### Premium")
-        st.markdown("### £39/month")
-        st.markdown("- Up to 50,000 rows\n- SHAP Explainability\n- Advanced insights\n- Premium analytics")
-        upgrade_button("premium")
-
+        st.markdown("### Premium")
+        st.markdown("## £39/month")
+        st.write("Advanced analytics and SHAP explainability.")
     st.markdown("---")
 
 
-def get_user_plan(user_id):
-    """Fetch the logged-in user's plan from Supabase profiles table."""
-    try:
-        result = (
-            supabase
-            .table("profiles")
-            .select("plan")
-            .eq("id", user_id)
-            .single()
-            .execute()
-        )
-
-        if result.data and result.data.get("plan"):
-            return result.data["plan"]
-
-        return "starter"
-
-    except Exception:
-        return "starter"
-
-
-def ensure_user_profile(user_id, business_name=""):
-    """Create a starter profile for a new user if it does not already exist."""
-    try:
-        result = (
-            supabase
-            .table("profiles")
-            .select("id, plan, business_name")
-            .eq("id", user_id)
-            .single()
-            .execute()
-        )
-
-        if result.data:
-            return result.data
-
-    except Exception:
-        pass
-
-    try:
-        result = (
-            supabase
-            .table("profiles")
-            .insert({
-                "id": user_id,
-                "plan": "starter",
-                "business_name": business_name
-            })
-            .execute()
-        )
-
-        if result.data:
-            return result.data[0]
-
-    except Exception as e:
-        log_error("ensure_user_profile insert", e)
-        st.warning("Profile could not be created automatically.")
-        if st.secrets.get("DEBUG_MODE", False):
-            st.caption(f"Debug detail: {e}")
-
-    return {"id": user_id, "plan": "starter", "business_name": business_name}
-
-
-def set_logged_in_session(user, plan):
-    """Save the logged-in user details in Streamlit session state."""
-    st.session_state["logged_in"] = True
-    st.session_state["user"] = user
-    st.session_state["user_id"] = user.id
-    st.session_state["email"] = user.email
-    st.session_state["username"] = user.id
-    st.session_state["role"] = "customer"
-    st.session_state["plan"] = plan.lower()
-
-
-def login():
+def login_page():
     landing_page()
-
     if supabase is None:
-        st.error("Supabase is not connected. Add SUPABASE_URL and SUPABASE_ANON_KEY in Streamlit Cloud secrets.")
         st.stop()
 
-    dark_mode = st.toggle("🌙 Dark mode", value=False)
-
-    if dark_mode:
-        st.markdown("""
-        <style>
-        .stApp {
-            background: #0f172a;
-            color: white;
-        }
-        input {
-            background: #1e293b !important;
-            color: white !important;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
     st.markdown("## 🔐 Secure Customer Login")
+    left, right = st.columns([1.1, 1])
 
-    col1, col2 = st.columns([1.2, 1])
-
-    with col1:
+    with left:
         st.markdown("## Welcome to")
         st.markdown("# AI Business Growth Platform")
-        st.write("Turn your sales data into insights, forecasts, and AI-powered decisions.")
         st.write("📊 Real-time dashboards")
         st.write("📈 Revenue forecasting")
         st.write("🤖 AI-powered recommendations")
         st.write("📄 Executive reports")
 
-    with col2:
+    with right:
         tab_login, tab_signup, tab_reset = st.tabs(["Login", "Sign Up", "Reset Password"])
 
         with tab_login:
-            st.markdown("### Login to your account")
-
             email = st.text_input("Email address", key="login_email")
             password = st.text_input("Password", type="password", key="login_password")
-            st.checkbox("🔐 Remember me", key="remember_me")
-
             if st.button("Login", use_container_width=True):
                 if not email or not password:
                     st.error("Please enter your email and password.")
                 else:
                     try:
-                        response = supabase.auth.sign_in_with_password({
-                            "email": email.strip().lower(),
-                            "password": password
-                        })
-
-                        user = response.user
-                        ensure_user_profile(user.id)
-                        plan = get_user_plan(user.id)
-                        set_logged_in_session(user, plan)
-
+                        response = supabase.auth.sign_in_with_password({"email": email.strip().lower(), "password": password})
+                        set_login_session(response.user)
                         st.success("Login successful.")
                         st.rerun()
-
                     except Exception as e:
-                        log_error("Login", e)
-                        st.error("We couldn't log you in. Please check your email and password and try again.")
-                        if st.secrets.get("DEBUG_MODE", False):
-                            st.caption(f"Debug detail: {e}")
+                        show_error("We couldn't log you in. Check your email and password.", "login", e)
 
         with tab_signup:
-            st.markdown("### Create a new account")
-
             signup_email = st.text_input("Email address", key="signup_email")
             signup_password = st.text_input("Password", type="password", key="signup_password")
             business_name = st.text_input("Business name", key="signup_business_name")
-
             if st.button("Create Account", use_container_width=True):
                 if not signup_email or not signup_password:
                     st.error("Please enter your email and password.")
@@ -360,396 +284,184 @@ def login():
                     st.error("Password must be at least 6 characters.")
                 else:
                     try:
-                        response = supabase.auth.sign_up({
-                            "email": signup_email.strip().lower(),
-                            "password": signup_password
-                        })
-
+                        response = supabase.auth.sign_up({"email": signup_email.strip().lower(), "password": signup_password})
                         if response.user:
-                            try:
-                                ensure_user_profile(response.user.id, business_name)
-                            except Exception as e:
-                                log_error("Signup ensure_user_profile", e)
-                                st.warning("Account created, but profile was not created automatically.")
-
+                            ensure_user_profile(response.user.id, business_name, response.user.email)
                             st.success("Account created. Please log in now.")
-
+                        else:
+                            st.info("Check your email to confirm your account, then log in.")
                     except Exception as e:
-                        show_error("We couldn't create your account. Please try again.", "Signup", e)
+                        msg = str(e).lower()
+                        if "already" in msg or "registered" in msg:
+                            st.error("This email is already registered. Please use Login instead.")
+                        else:
+                            show_error("We couldn't create your account. Please try again.", "signup", e)
 
         with tab_reset:
-            st.markdown("### Reset your password")
-
             reset_email = st.text_input("Registered email address", key="reset_email")
-
             if st.button("Send Password Reset Email", use_container_width=True):
-                if not reset_email:
-                    st.error("Please enter your email address.")
-                else:
-                    try:
-                        supabase.auth.reset_password_for_email(reset_email.strip().lower())
-                        st.success("Password reset email sent. Please check your inbox.")
-                    except Exception as e:
-                        show_error("We couldn't send the password reset email. Please try again.", "Password reset", e)
+                try:
+                    supabase.auth.reset_password_for_email(reset_email.strip().lower())
+                    st.success("Password reset email sent.")
+                except Exception as e:
+                    show_error("We couldn't send the reset email.", "password reset", e)
 
-
-# =========================
-# LOGIN CHECK
-# =========================
 
 if "logged_in" not in st.session_state:
     st.session_state["logged_in"] = False
 
 if not st.session_state["logged_in"]:
-    login()
+    login_page()
     st.stop()
 
-
 # =========================
-# OPENAI CLIENT
-# =========================
-
-api_key = st.secrets.get("OPENAI_API_KEY", "")
-client = OpenAI(api_key=api_key) if api_key else None
-
-
-# =========================
-# CSS
-# =========================
-
-st.markdown("""
-<style>
-.stApp { background: #f6f9ff; }
-.block-container { padding-top: 2rem; padding-left: 2rem; padding-right: 2rem; }
-section[data-testid="stSidebar"] { background: linear-gradient(180deg, #111827 0%, #4f46e5 100%); }
-section[data-testid="stSidebar"] * { color: white !important; }
-.sidebar-logo { font-size: 26px; font-weight: 900; margin-bottom: 30px; line-height: 1.2; }
-.nav-item { padding: 14px 16px; border-radius: 14px; margin-bottom: 10px; font-weight: 600; }
-.nav-active { background: rgba(255,255,255,0.22); }
-.hero { background: linear-gradient(135deg, #6d28d9, #0ea5e9); padding: 34px 38px; border-radius: 26px; color: white; box-shadow: 0 16px 36px rgba(79,70,229,0.25); margin-bottom: 24px; }
-.hero h1 { color: white; font-size: 40px; margin: 0; }
-.hero p { margin-top: 12px; font-size: 16px; color: #e0f2fe; }
-.card { background: white; padding: 24px; border-radius: 22px; border: 1px solid #e5e7eb; box-shadow: 0 12px 30px rgba(15,23,42,0.06); margin-bottom: 24px; }
-.upload-inner { border: 2px dashed #c4b5fd; border-radius: 18px; text-align: center; padding: 32px; background: #fbfaff; margin-bottom: 15px; }
-.pill { display: inline-block; padding: 8px 13px; border-radius: 9px; border: 1px solid #c4b5fd; color: #5b21b6; margin: 4px; font-weight: 600; font-size: 13px; }
-.metric-card { padding: 22px; border-radius: 20px; color: white; min-height: 155px; box-shadow: 0 15px 30px rgba(0,0,0,0.14); margin-bottom: 22px; }
-.metric-title { font-size: 14px; font-weight: 700; opacity: 0.95; }
-.metric-value { font-size: 28px; font-weight: 900; margin-top: 18px; word-break: break-word; }
-.metric-sub { font-size: 13px; margin-top: 10px; opacity: 0.95; }
-.insight { padding: 15px; border-radius: 14px; margin-bottom: 12px; border: 1px solid #e5e7eb; }
-.rec-box { background: linear-gradient(135deg, #ecfdf5, #f0fdf4); padding: 24px; border-radius: 22px; border: 1px solid #bbf7d0; box-shadow: 0 12px 30px rgba(16,185,129,0.12); margin-bottom: 24px; }
-.ai-response { background: #fbfaff; padding: 22px; border-radius: 18px; border: 1px solid #ddd6fe; margin-top: 18px; }
-.tip { background: #eff6ff; padding: 16px; border-radius: 16px; border: 1px solid #bfdbfe; text-align: center; color: #1d4ed8; font-weight: 700; margin-top: 20px; margin-bottom: 20px; }
-input { border-radius: 10px !important; border: 1px solid #d1d5db !important; padding: 10px !important; }
-.stButton button { background: linear-gradient(135deg, #6366f1, #4f46e5) !important; color: white !important; border-radius: 10px !important; font-weight: 600 !important; height: 45px !important; border: none !important; }
-.stButton button:hover { opacity: 0.92; transform: scale(1.01); transition: 0.2s; }
-section[data-testid="stFileUploader"] label { display: none !important; }
-section[data-testid="stFileUploader"] button { color: #111827 !important; background: white !important; border: 1px solid #d1d5db !important; border-radius: 10px !important; font-weight: 600 !important; }
-button[data-baseweb="tab"] { font-weight: 700 !important; border-radius: 12px !important; }
-</style>
-""", unsafe_allow_html=True)
-
-
-# =========================
-# SIDEBAR
+# SIDEBAR - REAL NAVIGATION
 # =========================
 
 with st.sidebar:
-    st.markdown('<div class="sidebar-logo">Business<br>Growth AI</div>', unsafe_allow_html=True)
-    st.markdown(f"**User:** {st.session_state.get('email', st.session_state.get('username', ''))}")
-    st.markdown(f"**Plan:** {st.session_state['plan'].title()}")
-    st.markdown(f"**Role:** {st.session_state['role'].title()}")
+    st.markdown("## Business Growth AI")
+    st.markdown(f"**User:** {st.session_state.get('email', '')}")
+    st.markdown(f"**Plan:** {current_plan().title()}")
 
-    if st.button("Refresh Plan"):
-        try:
-            st.session_state["plan"] = get_user_plan(st.session_state["user_id"]).lower()
-            st.success("Plan refreshed.")
-            st.rerun()
-        except Exception as e:
-            show_error("We couldn't refresh your plan right now.", "Refresh plan", e)
-
-    st.markdown("---")
-    st.markdown('<div class="nav-item nav-active">Dashboard</div>', unsafe_allow_html=True)
-    st.markdown('<div class="nav-item">Forecasting</div>', unsafe_allow_html=True)
-    st.markdown('<div class="nav-item">SHAP Explainability</div>', unsafe_allow_html=True)
-    st.markdown('<div class="nav-item">AI Assistant</div>', unsafe_allow_html=True)
-    st.markdown('<div class="nav-item">Reports</div>', unsafe_allow_html=True)
-    st.markdown("---")
-
-    if st.session_state["plan"] == "starter":
-        upgrade_button("pro")
-
-    if st.session_state["plan"] in ["starter", "pro"]:
-        upgrade_button("premium")
-
-    if st.button("Logout"):
-        try:
-            supabase.auth.sign_out()
-        except Exception:
-            pass
-        st.session_state.clear()
+    if st.button("Refresh Plan", use_container_width=True):
+        refresh_plan()
+        st.success("Plan refreshed.")
         st.rerun()
 
-    st.markdown("<br><small>© 2026 AI-Powered Business Growth Platform</small>", unsafe_allow_html=True)
-
-
-# =========================
-# HEADER
-# =========================
-
-st.markdown(f"""
-<div style="color:#5b21b6;font-weight:800;">Welcome back!</div>
-<div class="hero">
-    <h1>{APP_NAME}</h1>
-    <p>Upload sales data, analyse KPIs, forecast future revenue, detect growth products, explain sales drivers, and generate AI-powered business recommendations.</p>
-</div>
-""", unsafe_allow_html=True)
-
-
-# =========================
-# UPLOAD SECTION
-# =========================
-
-st.markdown('<div class="card">', unsafe_allow_html=True)
-u1, u2 = st.columns([1, 1])
-
-with u1:
-    st.markdown("""
-    <div class="upload-inner">
-        <div style="font-size:46px;color:#6d28d9;">⬆️</div>
-        <h3>Upload your sales data</h3>
-        <p>Upload CSV or Excel file below</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-    uploaded_file = st.file_uploader(
-        "Upload sales file",
-        type=["csv", "xlsx"],
+    st.markdown("---")
+    page = st.radio(
+        "Navigation",
+        ["Dashboard", "Forecasting", "AI Assistant", "Reports", "Data Preview", "Pricing", "Account"],
         label_visibility="collapsed",
-        key="sales_file_upload"
     )
 
-    if uploaded_file is not None:
-        st.success(f"Selected file: {uploaded_file.name}")
+    st.markdown("---")
+    st.markdown("### Upgrade")
+    if current_plan() == "starter":
+        upgrade_button("pro")
+        upgrade_button("premium")
+    elif current_plan() == "pro":
+        upgrade_button("premium")
+    else:
+        st.success("Premium active")
 
-with u2:
-    st.markdown("""
-    <h3 style="color:#5b21b6;">Required Data</h3>
-    <span class="pill">Date</span>
-    <span class="pill">Product</span>
-    <span class="pill">Category</span>
-    <span class="pill">Quantity</span>
-    <span class="pill">Price</span>
-    <br><br>
-    <h3 style="color:#5b21b6;">Smart Column Detection</h3>
-    <p>Accepts variations such as Sales, Revenue, Amount, Qty, Units, Order Date, Product Name and more.</p>
-    <br>
-    <h3 style="color:#5b21b6;">Secure Cloud Storage</h3>
-    <p>Uploaded files are stored securely in Supabase Storage under your user account.</p>
-    """, unsafe_allow_html=True)
-
-st.markdown('</div>', unsafe_allow_html=True)
-
+    st.markdown("---")
+    if st.button("Logout / Switch Account", use_container_width=True):
+        logout()
 
 # =========================
-# DEMO DATA FALLBACK
+# DATA LOADING
 # =========================
 
-def create_demo_sales_data():
-    """Built-in sample data so the app still works if sample_sales.csv is not deployed."""
-    dates = pd.date_range(start="2026-01-01", periods=90, freq="D")
-    products = ["Laptop Stand", "Wireless Mouse", "Keyboard", "USB-C Hub", "Notebook"]
-    categories = ["Accessories", "Accessories", "Accessories", "Electronics", "Stationery"]
-
-    rows = []
+def demo_data() -> pd.DataFrame:
     rng = np.random.default_rng(42)
-    for date in dates:
+    dates = pd.date_range("2026-01-01", periods=180, freq="D")
+    products = ["Latte", "Cappuccino", "Americano", "Mocha", "Flat White", "Tea"]
+    categories = ["Coffee", "Coffee", "Coffee", "Coffee", "Coffee", "Tea"]
+    prices = {"Latte": 3.5, "Cappuccino": 3.8, "Americano": 2.9, "Mocha": 4.2, "Flat White": 3.7, "Tea": 2.5}
+    rows = []
+    for i, date in enumerate(dates):
+        boost = 1.25 if date.dayofweek in [5, 6] else 1.0
+        trend = 1 + i / len(dates) * 0.25
         for product, category in zip(products, categories):
-            quantity = int(rng.integers(1, 8))
-            unit_price = float(rng.choice([8.99, 12.99, 19.99, 24.99, 39.99]))
-            unit_cost = round(unit_price * float(rng.uniform(0.45, 0.7)), 2)
-            rows.append({
-                "Date": date,
-                "Product": product,
-                "Category": category,
-                "Quantity": quantity,
-                "Unit Price": unit_price,
-                "Cost": unit_cost,
-            })
-
+            qty = int(max(1, rng.normal(18 * boost * trend, 5)))
+            rows.append({"Date": date, "Product": product, "Category": category, "Quantity": qty, "Price": prices[product], "Cost": round(prices[product] * 0.45, 2)})
     return pd.DataFrame(rows)
 
-# =========================
-# SUPABASE STORAGE FILE FUNCTIONS
-# =========================
 
-def save_uploaded_file(file):
+def save_uploaded_file(file) -> str:
     user_id = st.session_state["user_id"]
-    safe_filename = file.name.replace("/", "_").replace("\\", "_")
-    storage_path = f"{user_id}/{safe_filename}"
-    file_bytes = file.getvalue()
-
+    safe_name = file.name.replace("/", "_").replace("\\", "_")
+    path = f"{user_id}/{safe_name}"
+    data = file.getvalue()
     try:
-        supabase_admin.storage.from_(STORAGE_BUCKET).upload(
-            storage_path,
-            file_bytes,
-            {"content-type": file.type or "application/octet-stream", "upsert": "true"}
-        )
+        supabase_admin.storage.from_(STORAGE_BUCKET).upload(path, data, {"content-type": file.type or "application/octet-stream", "upsert": "true"})
     except Exception as e:
-        error_text = str(e).lower()
-        if "already exists" in error_text or "duplicate" in error_text:
-            supabase_admin.storage.from_(STORAGE_BUCKET).update(
-                storage_path,
-                file_bytes,
-                {"content-type": file.type or "application/octet-stream"}
-            )
+        if "already exists" in str(e).lower() or "duplicate" in str(e).lower():
+            supabase_admin.storage.from_(STORAGE_BUCKET).update(path, data, {"content-type": file.type or "application/octet-stream"})
         else:
-            raise e
-
-    return storage_path
-
-
-def get_latest_user_file():
-    user_id = st.session_state["user_id"]
-    files = supabase_admin.storage.from_(STORAGE_BUCKET).list(user_id)
-
-    if not files:
-        return None
-
-    latest = sorted(
-        files,
-        key=lambda file: file.get("created_at", "") or file.get("updated_at", "") or file.get("name", ""),
-        reverse=True
-    )[0]
-
-    return f"{user_id}/{latest['name']}"
+            raise
+    return path
 
 
-def load_data(file):
-    if file is not None:
-        storage_path = save_uploaded_file(file)
-        st.success("File uploaded and saved securely to Supabase Storage.")
-    else:
-        storage_path = get_latest_user_file()
+def load_uploaded_or_demo(file):
+    if file is None:
+        st.info("Demo data is being displayed. Upload your own file to analyse your business.")
+        return demo_data(), True
 
-        if storage_path:
-            st.info("Using your previously uploaded file from Supabase Storage.")
-        else:
-            st.info("No file uploaded yet. Demo sample data is being used.")
-            try:
-                return pd.read_csv("sample_sales.csv")
-            except Exception:
-                return create_demo_sales_data()
-
-    file_bytes = supabase_admin.storage.from_(STORAGE_BUCKET).download(storage_path)
-    file_buffer = BytesIO(file_bytes)
-
-    if storage_path.lower().endswith(".csv"):
-        return pd.read_csv(file_buffer)
-
-    return pd.read_excel(file_buffer, engine="openpyxl")
+    path = save_uploaded_file(file)
+    st.success("File uploaded and saved securely to Supabase Storage.")
+    downloaded = supabase_admin.storage.from_(STORAGE_BUCKET).download(path)
+    buffer = BytesIO(downloaded)
+    if path.lower().endswith(".csv"):
+        return pd.read_csv(buffer), False
+    return pd.read_excel(buffer, engine="openpyxl"), False
 
 
-def detect_and_clean_columns(df):
-    """Detect common sales-data column names and clean the dataset.
-
-    Important improvement:
-    - Unit price and total revenue are treated differently.
-    - If the uploaded file has a total sales/revenue column, the app does NOT multiply it by Quantity again.
-    - If the uploaded file has a unit price column, Total_Sales = Quantity * Unit_Price.
-    """
-    original_columns = list(df.columns)
-    clean_columns = [str(col).lower().strip().replace("_", " ") for col in original_columns]
-    column_lookup = dict(zip(clean_columns, original_columns))
-
-    column_mapping = {
-        "Date": ["date", "order date", "invoice date", "transaction date", "sale date", "purchase date", "created date"],
-        "Product": ["product", "item", "product name", "item name", "description", "pizza type", "service", "menu item", "sku", "stock item"],
-        "Category": ["category", "type", "department", "branch", "location", "store", "section", "group", "class", "product category"],
-        "Quantity": ["quantity", "qty", "units", "items sold", "number sold", "order quantity", "sold quantity", "count"],
-        "Unit_Price": ["unit price", "price", "selling price", "item price", "retail price", "sale price"],
-        "Revenue": ["sales", "revenue", "amount", "total", "total sales", "sale amount", "order value", "value", "line total", "net sales", "gross sales"],
-        "Cost": ["cost", "unit cost", "cogs", "cost of goods", "cost price", "purchase price", "wholesale cost", "supplier cost"],
+def clean_columns(df: pd.DataFrame):
+    original = list(df.columns)
+    clean = [str(c).lower().strip().replace("_", " ") for c in original]
+    lookup = dict(zip(clean, original))
+    mapping = {
+        "Date": ["date", "order date", "invoice date", "transaction date", "sale date", "created date"],
+        "Product": ["product", "item", "product name", "item name", "description", "sku", "menu item"],
+        "Category": ["category", "type", "department", "section", "group", "product category"],
+        "Quantity": ["quantity", "qty", "units", "items sold", "sold quantity", "count"],
+        "Price": ["price", "unit price", "selling price", "item price"],
+        "Revenue": ["sales", "amount", "revenue", "total", "total sales", "sale amount", "order value", "value"],
+        "Cost": ["cost", "unit cost", "cogs", "cost of goods", "cost price", "purchase price"],
     }
-
-    detected_columns = {}
-
-    for standard_col, possible_names in column_mapping.items():
-        match_found = None
-
-        for name in possible_names:
-            if name in clean_columns:
-                match_found = name
+    detected = {}
+    for standard, names in mapping.items():
+        found = None
+        for name in names:
+            if name in clean:
+                found = name
                 break
-
-        if match_found is None:
-            for col in clean_columns:
-                if any(name in col or col in name for name in possible_names):
-                    match_found = col
+        if not found:
+            for col in clean:
+                if any(name in col or col in name for name in names):
+                    found = col
                     break
+        if not found:
+            fuzzy = get_close_matches(standard.lower(), clean, n=1, cutoff=0.55)
+            if fuzzy:
+                found = fuzzy[0]
+        if found:
+            detected[standard] = lookup[found]
 
-        if match_found is None:
-            fuzzy_match = get_close_matches(standard_col.lower().replace("_", " "), clean_columns, n=1, cutoff=0.58)
-            if fuzzy_match:
-                match_found = fuzzy_match[0]
-
-        if match_found:
-            detected_columns[standard_col] = column_lookup[match_found]
-
-    required_base = ["Date", "Product", "Category", "Quantity"]
-    missing = [col for col in required_base if col not in detected_columns]
-
-    if "Unit_Price" not in detected_columns and "Revenue" not in detected_columns:
-        missing.append("Unit Price or Revenue/Sales")
-
+    missing = [c for c in ["Date", "Product", "Category", "Quantity"] if c not in detected]
+    if "Price" not in detected and "Revenue" not in detected:
+        missing.append("Price or Revenue")
     if missing:
         st.error(f"Missing required columns: {', '.join(missing)}")
-        st.write("Detected columns in your file:")
-        st.write(original_columns)
+        st.write("Detected columns:", original)
         st.stop()
 
-    has_cost_column = "Cost" in detected_columns
-    has_unit_price = "Unit_Price" in detected_columns
-    has_revenue = "Revenue" in detected_columns
+    rename = {detected["Date"]: "Date", detected["Product"]: "Product", detected["Category"]: "Category", detected["Quantity"]: "Quantity"}
+    if "Price" in detected:
+        rename[detected["Price"]] = "Price"
+    if "Revenue" in detected and "Price" not in detected:
+        rename[detected["Revenue"]] = "Revenue"
+    if "Cost" in detected:
+        rename[detected["Cost"]] = "Cost"
 
-    rename_map = {
-        detected_columns["Date"]: "Date",
-        detected_columns["Product"]: "Product",
-        detected_columns["Category"]: "Category",
-        detected_columns["Quantity"]: "Quantity",
-    }
-    if has_unit_price:
-        rename_map[detected_columns["Unit_Price"]] = "Unit_Price"
-    if has_revenue:
-        rename_map[detected_columns["Revenue"]] = "Revenue"
-    if has_cost_column:
-        rename_map[detected_columns["Cost"]] = "Cost"
-
-    df = df.rename(columns=rename_map)
-    df = df.loc[:, ~df.columns.duplicated()]
-
-    rows_before = len(df)
-
+    df = df.rename(columns=rename).loc[:, ~df.rename(columns=rename).columns.duplicated()]
+    before = len(df)
     df["Date"] = pd.to_datetime(df["Date"], errors="coerce", dayfirst=True)
     df["Quantity"] = pd.to_numeric(df["Quantity"], errors="coerce")
-
-    if has_unit_price:
-        df["Unit_Price"] = pd.to_numeric(df["Unit_Price"], errors="coerce")
-    if has_revenue:
+    required = ["Date", "Quantity"]
+    if "Price" in df.columns:
+        df["Price"] = pd.to_numeric(df["Price"], errors="coerce")
+        required.append("Price")
+    if "Revenue" in df.columns:
         df["Revenue"] = pd.to_numeric(df["Revenue"], errors="coerce")
-    if has_cost_column:
+        required.append("Revenue")
+    if "Cost" in df.columns:
         df["Cost"] = pd.to_numeric(df["Cost"], errors="coerce")
 
-    required_for_cleaning = ["Date", "Quantity"]
-    if has_unit_price:
-        required_for_cleaning.append("Unit_Price")
-    elif has_revenue:
-        required_for_cleaning.append("Revenue")
-
-    df = df.dropna(subset=required_for_cleaning)
-    rows_after_required = len(df)
-    rows_dropped = rows_before - rows_after_required
-
+    df = df.dropna(subset=required)
+    dropped = before - len(df)
     if df.empty:
         st.error("No valid data found after cleaning.")
         st.stop()
@@ -757,24 +469,130 @@ def detect_and_clean_columns(df):
     df["Product"] = df["Product"].astype(str).str.strip()
     df["Category"] = df["Category"].astype(str).str.strip()
     df["Month"] = df["Date"].dt.to_period("M").dt.to_timestamp()
-
-    if has_revenue:
+    if "Revenue" in df.columns and "Price" not in df.columns:
         df["Total_Sales"] = df["Revenue"]
-        if has_unit_price:
-            st.caption("Both unit price and revenue columns were detected. Revenue/Sales is being used for Total Sales to avoid double-counting.")
+        df["Price"] = df["Total_Sales"] / df["Quantity"].replace(0, np.nan)
     else:
-        df["Total_Sales"] = df["Quantity"] * df["Unit_Price"]
-
-    if has_cost_column:
+        df["Total_Sales"] = df["Quantity"] * df["Price"]
+    if "Cost" in df.columns:
         df["Total_Cost"] = df["Quantity"] * df["Cost"]
         df["Profit"] = df["Total_Sales"] - df["Total_Cost"]
-        df.loc[df["Cost"].isna(), ["Total_Cost", "Profit"]] = np.nan
+    return df, detected, dropped
 
-    detected_columns["_has_cost_column"] = has_cost_column
-    detected_columns["_sales_source"] = "Revenue/Sales column" if has_revenue else "Quantity × Unit Price"
 
-    return df, detected_columns, rows_dropped
+def enforce_row_limit(df: pd.DataFrame) -> pd.DataFrame:
+    limit = PLAN_LIMITS.get(current_plan(), PLAN_LIMITS["starter"])["rows"]
+    if len(df) > limit:
+        st.warning(f"Your {current_plan().title()} plan allows up to {limit:,} rows. Only the first {limit:,} rows are being analysed.")
+        return df.head(limit)
+    return df
 
+# =========================
+# HEADER + UPLOAD
+# =========================
+
+st.markdown(f"""
+<div class="hero">
+    <h1>{APP_NAME}</h1>
+    <p>Upload sales data, analyse KPIs, forecast revenue and generate AI-powered business recommendations.</p>
+</div>
+""", unsafe_allow_html=True)
+
+st.markdown('<div class="card">', unsafe_allow_html=True)
+up_col, req_col = st.columns([1, 1])
+with up_col:
+    st.markdown("""
+    <div class="upload-inner">
+        <div style="font-size:46px;color:#6d28d9;">⬆️</div>
+        <h3>Upload your sales data</h3>
+        <p>Upload CSV or Excel file below</p>
+    </div>
+    """, unsafe_allow_html=True)
+    uploaded_file = st.file_uploader("Upload sales file", type=["csv", "xlsx"], label_visibility="collapsed")
+    if uploaded_file:
+        st.success(f"Selected file: {uploaded_file.name}")
+with req_col:
+    st.markdown("""
+    <h3 style="color:#5b21b6;">Required Data</h3>
+    <span class="pill">Date</span><span class="pill">Product</span><span class="pill">Category</span><span class="pill">Quantity</span><span class="pill">Price or Revenue</span>
+    <br><br><h3 style="color:#5b21b6;">Smart Column Detection</h3>
+    <p>Accepts variations such as Sales, Revenue, Amount, Qty, Units, Order Date and Product Name.</p>
+    """, unsafe_allow_html=True)
+st.markdown('</div>', unsafe_allow_html=True)
+
+try:
+    raw_df, using_demo = load_uploaded_or_demo(uploaded_file)
+    df, detected_columns, rows_dropped = clean_columns(raw_df)
+    df = enforce_row_limit(df)
+    if rows_dropped:
+        st.warning(f"{rows_dropped:,} invalid row(s) were skipped.")
+except Exception as e:
+    show_error("We couldn't load your file. Please check the file format and columns.", "load data", e)
+    st.stop()
+
+# =========================
+# FILTERS + CALCULATIONS
+# =========================
+
+st.markdown("### Filter Dashboard")
+f1, f2, f3 = st.columns(3)
+with f1:
+    categories = sorted(df["Category"].dropna().unique())
+    selected_categories = st.multiselect("Filter by Category", categories, default=categories)
+with f2:
+    products = sorted(df["Product"].dropna().unique())
+    selected_products = st.multiselect("Filter by Product", products, default=products)
+with f3:
+    min_date, max_date = df["Date"].min().date(), df["Date"].max().date()
+    selected_date = st.date_input("Filter by Date Range", value=(min_date, max_date), min_value=min_date, max_value=max_date)
+
+start_date, end_date = selected_date if isinstance(selected_date, tuple) and len(selected_date) == 2 else (min_date, max_date)
+filtered_df = df[(df["Category"].isin(selected_categories)) & (df["Product"].isin(selected_products)) & (df["Date"].dt.date >= start_date) & (df["Date"].dt.date <= end_date)]
+if filtered_df.empty:
+    st.warning("No data available for selected filters.")
+    st.stop()
+
+total_revenue = filtered_df["Total_Sales"].sum()
+total_orders = len(filtered_df)
+avg_order_value = filtered_df["Total_Sales"].mean()
+product_revenue = filtered_df.groupby("Product")["Total_Sales"].sum()
+category_revenue = filtered_df.groupby("Category")["Total_Sales"].sum()
+best_product = product_revenue.idxmax()
+lowest_product = product_revenue.idxmin()
+top_category = category_revenue.idxmax()
+monthly_sales = filtered_df.groupby("Month")["Total_Sales"].sum().sort_index()
+growth = ((monthly_sales.iloc[-1] - monthly_sales.iloc[-2]) / monthly_sales.iloc[-2] * 100) if len(monthly_sales) > 1 and monthly_sales.iloc[-2] != 0 else None
+growth_text = f"{growth:.1f}% vs last month" if growth is not None else "Not enough monthly data"
+
+monthly_product_sales = filtered_df.groupby(["Product", "Month"])["Total_Sales"].sum().reset_index().sort_values(["Product", "Month"])
+growth_products = []
+for product in monthly_product_sales["Product"].unique():
+    p = monthly_product_sales[monthly_product_sales["Product"] == product]
+    if len(p) >= 2 and p["Total_Sales"].iloc[-2] != 0:
+        growth_products.append((product, (p["Total_Sales"].iloc[-1] - p["Total_Sales"].iloc[-2]) / p["Total_Sales"].iloc[-2] * 100))
+if growth_products:
+    top_growth_product, top_growth_rate = max(growth_products, key=lambda x: x[1])
+    top_growth_text = f"{top_growth_product} grew by {top_growth_rate:.1f}%"
+else:
+    top_growth_product, top_growth_text = "Not enough data", "Need at least 2 months of product data"
+
+recommendation = f"Increase focus on {best_product}. Your strongest category is {top_category}. Review {lowest_product}, which is currently the lowest-performing product. Monitor {top_growth_product} for future growth."
+
+if "Profit" in filtered_df.columns:
+    profit_df = filtered_df.dropna(subset=["Profit"])
+    total_profit = profit_df["Profit"].sum() if not profit_df.empty else None
+    margin = total_profit / profit_df["Total_Sales"].sum() * 100 if total_profit is not None and profit_df["Total_Sales"].sum() else None
+else:
+    total_profit = margin = None
+
+report_summary = pd.DataFrame({
+    "Metric": ["Total Revenue", "Total Orders", "Average Order Value", "Best Product", "Lowest Product", "Top Category", "Top Growth Product", "Sales Growth", "Current Plan"],
+    "Value": [f"£{total_revenue:,.2f}", f"{total_orders:,}", f"£{avg_order_value:,.2f}", best_product, lowest_product, top_category, top_growth_text, growth_text, current_plan().title()],
+})
+
+# =========================
+# UI HELPERS
+# =========================
 
 def metric(title, value, sub, gradient):
     st.markdown(f"""
@@ -786,569 +604,186 @@ def metric(title, value, sub, gradient):
     """, unsafe_allow_html=True)
 
 
-def generate_pdf_report(report_summary, recommendation):
+def make_pdf(summary: pd.DataFrame, rec: str):
     buffer = BytesIO()
-
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=A4,
-        rightMargin=40,
-        leftMargin=40,
-        topMargin=40,
-        bottomMargin=40
-    )
-
+    doc = SimpleDocTemplate(buffer, pagesize=A4)
     styles = getSampleStyleSheet()
-    story = []
-    story.append(Paragraph("AI-Powered Business Growth Report", styles["Title"]))
-    story.append(Spacer(1, 16))
-    story.append(Paragraph("Executive KPI Summary", styles["Heading2"]))
-    story.append(Spacer(1, 8))
-
-    table_data = [["Metric", "Value"]] + report_summary.values.tolist()
-    table = Table(table_data, colWidths=[220, 260])
-    table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("GRID", (0, 0), (-1, -1), 0.5, colors.grey),
-        ("BACKGROUND", (0, 1), (-1, -1), colors.HexColor("#f8fafc")),
-        ("PADDING", (0, 0), (-1, -1), 8),
-    ]))
-
-    story.append(table)
-    story.append(Spacer(1, 20))
-    story.append(Paragraph("Business Recommendation", styles["Heading2"]))
-    story.append(Paragraph(recommendation, styles["BodyText"]))
-    story.append(Spacer(1, 20))
-    story.append(Paragraph("This report was generated by the AI-Powered Business Growth Platform.", styles["Italic"]))
+    story = [Paragraph("AI-Powered Business Growth Report", styles["Title"]), Spacer(1, 16), Paragraph("Executive KPI Summary", styles["Heading2"])]
+    table = Table([["Metric", "Value"]] + summary.values.tolist())
+    table.setStyle(TableStyle([("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#4f46e5")), ("TEXTCOLOR", (0, 0), (-1, 0), colors.white), ("GRID", (0, 0), (-1, -1), 0.5, colors.grey), ("PADDING", (0, 0), (-1, -1), 8)]))
+    story += [table, Spacer(1, 18), Paragraph("Recommendation", styles["Heading2"]), Paragraph(rec, styles["BodyText"])]
     doc.build(story)
     buffer.seek(0)
     return buffer
 
-
 # =========================
-# LOAD DATA
-# =========================
-
-try:
-    raw_df = load_data(uploaded_file)
-    df, detected_columns, rows_dropped = detect_and_clean_columns(raw_df)
-    df = enforce_row_limit(df)
-    st.success("Data loaded successfully and columns detected automatically.")
-    if rows_dropped > 0:
-        st.warning(
-            f"{rows_dropped:,} row(s) were skipped because of missing or invalid Date, "
-            f"Quantity, or Price values. Double-check your source file if this number looks high."
-        )
-except Exception as e:
-    show_error(
-        "We couldn't load your file. Please check that it's a valid CSV/Excel file with the required columns.",
-        "Data load", e
-    )
-    st.stop()
-
-
-# =========================
-# FILTERS
+# PAGES
 # =========================
 
-st.markdown("### Filter Dashboard")
-f1, f2, f3 = st.columns(3)
-
-with f1:
-    categories = sorted(df["Category"].dropna().unique())
-    selected_categories = st.multiselect("Filter by Category", categories, default=categories)
-
-with f2:
-    products = sorted(df["Product"].dropna().unique())
-    selected_products = st.multiselect("Filter by Product", products, default=products)
-
-with f3:
-    min_date = df["Date"].min().date()
-    max_date = df["Date"].max().date()
-    selected_date = st.date_input(
-        "Filter by Date Range",
-        value=(min_date, max_date),
-        min_value=min_date,
-        max_value=max_date
-    )
-
-if len(selected_date) == 2:
-    start_date, end_date = selected_date
-else:
-    start_date, end_date = min_date, max_date
-
-filtered_df = df[
-    (df["Category"].isin(selected_categories)) &
-    (df["Product"].isin(selected_products)) &
-    (df["Date"].dt.date >= start_date) &
-    (df["Date"].dt.date <= end_date)
-]
-
-if filtered_df.empty:
-    st.warning("No data available for selected filters.")
-    st.stop()
-
-
-# =========================
-# CALCULATIONS
-# =========================
-
-total_revenue = filtered_df["Total_Sales"].sum()
-total_orders = len(filtered_df)
-avg_order_value = filtered_df["Total_Sales"].mean()
-product_revenue = filtered_df.groupby("Product")["Total_Sales"].sum()
-category_revenue = filtered_df.groupby("Category")["Total_Sales"].sum()
-
-best_product = product_revenue.idxmax()
-lowest_product = product_revenue.idxmin()
-top_category = category_revenue.idxmax()
-monthly_sales = filtered_df.groupby("Month")["Total_Sales"].sum().sort_index()
-
-growth = None
-if len(monthly_sales) > 1 and monthly_sales.iloc[-2] != 0:
-    growth = ((monthly_sales.iloc[-1] - monthly_sales.iloc[-2]) / monthly_sales.iloc[-2]) * 100
-
-growth_text = f"{growth:.1f}% vs last month" if growth is not None else "Not enough monthly data"
-
-monthly_product_sales = (
-    filtered_df.groupby(["Product", "Month"])["Total_Sales"]
-    .sum()
-    .reset_index()
-    .sort_values(["Product", "Month"])
-)
-
-growth_products = []
-for product in monthly_product_sales["Product"].unique():
-    product_df = monthly_product_sales[monthly_product_sales["Product"] == product]
-
-    if len(product_df) >= 2 and product_df["Total_Sales"].iloc[-2] != 0:
-        product_growth = (
-            (product_df["Total_Sales"].iloc[-1] - product_df["Total_Sales"].iloc[-2])
-            / product_df["Total_Sales"].iloc[-2]
-        ) * 100
-        growth_products.append((product, product_growth))
-
-if growth_products:
-    top_growth_product, top_growth_rate = max(growth_products, key=lambda x: x[1])
-    top_growth_text = f"{top_growth_product} grew by {top_growth_rate:.1f}%"
-else:
-    top_growth_product = "Not enough data"
-    top_growth_text = "Need at least 2 months of product data"
-
-recommendation = (
-    f"Consider increasing stock or marketing for high-performing products such as {best_product}. "
-    f"Your strongest category is {top_category}, so this area may offer the best growth opportunity. "
-    f"Review {lowest_product}, because it is currently the lowest-performing product. "
-    f"Also monitor {top_growth_product}, because it may become a future high-value product."
-)
-
-# Profit/margin metrics - only available when the uploaded data included a Cost column.
-has_cost_column = detected_columns.get("_has_cost_column", False)
-total_profit = None
-profit_margin_pct = None
-most_profitable_product = None
-
-if has_cost_column and filtered_df["Profit"].notna().any():
-    profit_rows = filtered_df.dropna(subset=["Profit"])
-    total_profit = profit_rows["Profit"].sum()
-    profit_revenue_base = profit_rows["Total_Sales"].sum()
-
-    if profit_revenue_base != 0:
-        profit_margin_pct = (total_profit / profit_revenue_base) * 100
-
-    product_profit = profit_rows.groupby("Product")["Profit"].sum()
-    if not product_profit.empty:
-        most_profitable_product = product_profit.idxmax()
-
-    recommendation += (
-        f" Your overall profit margin is {profit_margin_pct:.1f}%, "
-        f"with {most_profitable_product} being your most profitable product overall."
-    ) if profit_margin_pct is not None and most_profitable_product else ""
-
-report_summary_metrics = [
-    "Total Revenue", "Total Orders", "Average Order Value", "Best Product",
-    "Lowest Product", "Top Category", "Top Growth Product", "Sales Growth", "Current Plan"
-]
-report_summary_values = [
-    f"£{total_revenue:,.2f}", total_orders, f"£{avg_order_value:,.2f}",
-    best_product, lowest_product, top_category, top_growth_text, growth_text,
-    st.session_state["plan"].title()
-]
-
-if total_profit is not None:
-    report_summary_metrics[2:2] = ["Total Profit", "Profit Margin", "Most Profitable Product"]
-    report_summary_values[2:2] = [
-        f"£{total_profit:,.2f}",
-        f"{profit_margin_pct:.1f}%" if profit_margin_pct is not None else "N/A",
-        most_profitable_product or "N/A",
-    ]
-
-report_summary = pd.DataFrame({
-    "Metric": report_summary_metrics,
-    "Value": report_summary_values
-})
-
-
-# =========================
-# TABS
-# =========================
-
-tab1, tab2, tab3, tab4, tab5 = st.tabs([
-    "Dashboard", "Forecasting", "AI Insights", "Reports", "Data Preview"
-])
-
-
-# =========================
-# TAB 1: DASHBOARD
-# =========================
-
-with tab1:
+if page == "Dashboard":
     st.markdown("### Key Business Performance")
-    st.caption("These KPIs summarise revenue, customer activity, average order value, product performance and growth momentum.")
-
+    cols = st.columns(6 if total_profit is not None else 5)
+    with cols[0]: metric("Total Revenue", f"£{total_revenue:,.2f}", growth_text, "linear-gradient(135deg,#7c3aed,#4f46e5)")
+    with cols[1]: metric("Total Orders", f"{total_orders:,}", "Sales records", "linear-gradient(135deg,#0ea5e9,#2563eb)")
+    with cols[2]: metric("Average Order Value", f"£{avg_order_value:,.2f}", "Revenue per order", "linear-gradient(135deg,#34d399,#059669)")
+    with cols[3]: metric("Best Product", best_product, "Highest revenue", "linear-gradient(135deg,#f59e0b,#f97316)")
+    with cols[4]: metric("Top Growth Product", top_growth_product, top_growth_text, "linear-gradient(135deg,#ec4899,#be185d)")
     if total_profit is not None:
-        c1, c2, c3, c4, c5, c6 = st.columns(6)
-    else:
-        c1, c2, c3, c4, c5 = st.columns(5)
-        c6 = None
-
-    with c1:
-        metric("Total Revenue", f"£{total_revenue:,.2f}", growth_text, "linear-gradient(135deg,#7c3aed,#4f46e5)")
-    with c2:
-        metric("Total Orders", f"{total_orders:,}", "Completed sales records", "linear-gradient(135deg,#0ea5e9,#2563eb)")
-    with c3:
-        metric("Average Order Value", f"£{avg_order_value:,.2f}", "Revenue per order", "linear-gradient(135deg,#34d399,#059669)")
-    with c4:
-        metric("Best Product", best_product, "Highest revenue product", "linear-gradient(135deg,#f59e0b,#f97316)")
-    with c5:
-        metric("Top Growth Product", top_growth_product, top_growth_text, "linear-gradient(135deg,#ec4899,#be185d)")
-    if c6 is not None:
-        with c6:
-            margin_sub = f"{profit_margin_pct:.1f}% margin" if profit_margin_pct is not None else "Margin unavailable"
-            metric("Total Profit", f"£{total_profit:,.2f}", margin_sub, "linear-gradient(135deg,#14b8a6,#0d9488)")
-
-    if not has_cost_column:
-        st.caption(
-            "Tip: add a 'Cost' column to your sales file to unlock profit and margin tracking, "
-            "not just revenue."
-        )
+        with cols[5]: metric("Total Profit", f"£{total_profit:,.2f}", f"{margin:.1f}% margin" if margin is not None else "Margin unavailable", "linear-gradient(135deg,#14b8a6,#0d9488)")
 
     left, right = st.columns(2)
-
     with left:
         st.markdown("### Sales Performance Over Time")
         monthly_chart = filtered_df.groupby("Month", as_index=False)["Total_Sales"].sum().sort_values("Month")
         fig = px.line(monthly_chart, x="Month", y="Total_Sales", markers=True)
-        fig.update_traces(line=dict(width=4, color="#6d28d9"), marker=dict(size=9, color="#6d28d9"))
-        fig.update_layout(height=420, template="plotly_white", xaxis_title="Month", yaxis_title="Revenue (£)", showlegend=False, hovermode="x unified")
+        fig.update_layout(height=420, template="plotly_white", yaxis_title="Revenue (£)")
         fig.update_yaxes(tickprefix="£", separatethousands=True)
         st.plotly_chart(fig, use_container_width=True)
-
     with right:
         st.markdown("### Top 10 Products by Revenue")
         product_sales = filtered_df.groupby("Product", as_index=False)["Total_Sales"].sum().sort_values("Total_Sales", ascending=False).head(10)
         fig = px.bar(product_sales, x="Total_Sales", y="Product", orientation="h")
-        fig.update_traces(marker_color="#2563eb")
-        fig.update_layout(height=420, template="plotly_white", xaxis_title="Revenue (£)", yaxis_title="", showlegend=False)
+        fig.update_layout(height=420, template="plotly_white", xaxis_title="Revenue (£)")
         fig.update_yaxes(autorange="reversed")
         fig.update_xaxes(tickprefix="£", separatethousands=True)
         st.plotly_chart(fig, use_container_width=True)
 
-    bottom_left, bottom_right = st.columns(2)
-
-    with bottom_left:
+    bl, br = st.columns(2)
+    with bl:
         st.markdown("### Revenue by Category")
-        category_sales = filtered_df.groupby("Category", as_index=False)["Total_Sales"].sum()
-        fig = px.pie(category_sales, names="Category", values="Total_Sales", hole=0.50)
+        fig = px.pie(filtered_df.groupby("Category", as_index=False)["Total_Sales"].sum(), names="Category", values="Total_Sales", hole=0.5)
         fig.update_layout(height=420)
         st.plotly_chart(fig, use_container_width=True)
-
-    with bottom_right:
+    with br:
         st.markdown("### Product Growth Ranking")
         if growth_products:
-            growth_df = pd.DataFrame(growth_products, columns=["Product", "Growth_Rate"])
-            growth_df = growth_df.sort_values("Growth_Rate", ascending=False).head(10)
+            growth_df = pd.DataFrame(growth_products, columns=["Product", "Growth_Rate"]).sort_values("Growth_Rate", ascending=False).head(10)
             fig = px.bar(growth_df, x="Growth_Rate", y="Product", orientation="h")
-            fig.update_traces(marker_color="#be185d")
-            fig.update_layout(height=420, template="plotly_white", xaxis_title="Growth Rate (%)", yaxis_title="")
+            fig.update_layout(height=420, template="plotly_white", xaxis_title="Growth Rate (%)")
             fig.update_yaxes(autorange="reversed")
             st.plotly_chart(fig, use_container_width=True)
         else:
             st.info("Not enough monthly product data to calculate growth ranking.")
 
-    st.markdown("### Business Insights")
     st.markdown(f"""
-    <div class="insight" style="background:#faf5ff;border-color:#ddd6fe;"><strong style="color:#6d28d9;">Highest Revenue Category</strong><br>{top_category} is currently generating the highest revenue.</div>
-    <div class="insight" style="background:#ecfdf5;border-color:#bbf7d0;"><strong style="color:#059669;">Top Performing Product</strong><br>{best_product} is the strongest product by total revenue.</div>
-    <div class="insight" style="background:#fff7ed;border-color:#fed7aa;"><strong style="color:#ea580c;">Product Requiring Attention</strong><br>{lowest_product} is the lowest performing product.</div>
-    <div class="insight" style="background:#fdf2f8;border-color:#fbcfe8;"><strong style="color:#be185d;">Top Growth Product</strong><br>{top_growth_text}</div>
-    <div class="insight" style="background:#eff6ff;border-color:#bfdbfe;"><strong style="color:#2563eb;">Sales Growth</strong><br>{growth_text}</div>
+    <div class="rec-box"><h3 style="margin-top:0;color:#065f46;">Business Recommendation</h3><p>{recommendation}</p></div>
     """, unsafe_allow_html=True)
 
-    st.markdown(f"""
-    <div class="rec-box">
-        <h3 style="margin-top:0;color:#065f46;">Business Recommendation</h3>
-        <p>{recommendation}</p>
-    </div>
-    """, unsafe_allow_html=True)
-
-
-# =========================
-# TAB 2: FORECASTING
-# =========================
-
-with tab2:
+elif page == "Forecasting":
     st.markdown("### Revenue Forecasting")
-
     if not feature_allowed("forecasting"):
-        st.warning("Unlock Forecasting to predict future revenue and plan business growth.")
-        upgrade_button("pro")
+        require_upgrade("Forecasting", "pro")
+    elif len(monthly_sales) < 3:
+        st.info("At least 3 months of data are needed to generate a forecast.")
     else:
-        forecast_method = st.radio("Choose forecasting method", ["Prophet Forecast", "Simple Linear Forecast"], horizontal=True)
+        forecast_df = monthly_sales.reset_index()
+        forecast_df.columns = ["Month", "Total_Sales"]
+        forecast_df["t"] = np.arange(len(forecast_df))
+        model = LinearRegression().fit(forecast_df[["t"]], forecast_df["Total_Sales"])
+        future_t = np.arange(len(forecast_df), len(forecast_df) + 3)
+        preds = model.predict(future_t.reshape(-1, 1))
+        months = pd.date_range(forecast_df["Month"].max() + pd.DateOffset(months=1), periods=3, freq="MS")
+        future_df = pd.DataFrame({"Month": months, "Forecast Sales": preds})
+        chart = pd.concat([forecast_df[["Month", "Total_Sales"]].rename(columns={"Total_Sales": "Sales"}), future_df.rename(columns={"Forecast Sales": "Sales"})])
+        fig = px.line(chart, x="Month", y="Sales", markers=True)
+        fig.update_layout(height=420, template="plotly_white", yaxis_title="Revenue (£)")
+        fig.update_yaxes(tickprefix="£", separatethousands=True)
+        st.plotly_chart(fig, use_container_width=True)
+        st.dataframe(future_df, use_container_width=True)
 
-        if len(monthly_sales) >= 3:
-            forecast_df = monthly_sales.reset_index()
-            forecast_df.columns = ["Month", "Total_Sales"]
-
-            if forecast_method == "Prophet Forecast" and PROPHET_AVAILABLE:
-                prophet_df = forecast_df.rename(columns={"Month": "ds", "Total_Sales": "y"})
-                model = Prophet()
-                model.fit(prophet_df)
-                future = model.make_future_dataframe(periods=3, freq="MS")
-                forecast = model.predict(future)
-
-                forecast_display = forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]].tail(3)
-                forecast_display = forecast_display.rename(columns={
-                    "ds": "Month", "yhat": "Forecast Sales", "yhat_lower": "Lower Estimate", "yhat_upper": "Upper Estimate"
-                })
-                plot_df = forecast[["ds", "yhat"]].rename(columns={"ds": "Month", "yhat": "Sales"})
-                fig = px.line(plot_df, x="Month", y="Sales", markers=True)
-                fig.update_traces(line=dict(width=4, color="#10b981"), marker=dict(size=9, color="#10b981"))
-                fig.update_layout(height=420, template="plotly_white", yaxis_title="Revenue (£)", xaxis_title="Month")
-                fig.update_yaxes(tickprefix="£", separatethousands=True)
-                st.plotly_chart(fig, use_container_width=True)
-                st.dataframe(forecast_display, use_container_width=True)
+elif page == "AI Assistant":
+    st.markdown("### AI Business Assistant")
+    if not feature_allowed("ai"):
+        require_upgrade("AI Assistant", "pro")
+    else:
+        question = st.text_input("Ask a question", placeholder="How can I improve sales next month?")
+        if st.button("Ask AI", use_container_width=True):
+            if not question:
+                st.error("Please enter a question.")
+            elif client is None:
+                st.error("OPENAI_API_KEY is missing in Streamlit secrets.")
             else:
-                if forecast_method == "Prophet Forecast" and not PROPHET_AVAILABLE:
-                    st.warning("Prophet is not installed. Showing simple linear forecast instead.")
-
-                forecast_df["t"] = np.arange(len(forecast_df))
-                model = LinearRegression()
-                model.fit(forecast_df[["t"]], forecast_df["Total_Sales"])
-                future_t = np.arange(len(forecast_df), len(forecast_df) + 3)
-                future_predictions = model.predict(future_t.reshape(-1, 1))
-                last_month = forecast_df["Month"].max()
-                future_months = pd.date_range(start=last_month + pd.DateOffset(months=1), periods=3, freq="MS")
-                future_df = pd.DataFrame({"Month": future_months, "Forecast Sales": future_predictions})
-
-                historical_plot = forecast_df[["Month", "Total_Sales"]].rename(columns={"Total_Sales": "Sales"})
-                future_plot = future_df.rename(columns={"Forecast Sales": "Sales"})
-                forecast_chart = pd.concat([historical_plot, future_plot])
-                fig = px.line(forecast_chart, x="Month", y="Sales", markers=True)
-                fig.update_traces(line=dict(width=4, color="#10b981"), marker=dict(size=9, color="#10b981"))
-                fig.update_layout(height=420, template="plotly_white", yaxis_title="Revenue (£)", xaxis_title="Month")
-                fig.update_yaxes(tickprefix="£", separatethousands=True)
-                st.plotly_chart(fig, use_container_width=True)
-                st.dataframe(future_df, use_container_width=True)
-        else:
-            st.info("At least 3 months of data are needed to generate a forecast.")
-
-
-# =========================
-# TAB 3: AI INSIGHTS
-# =========================
-
-with tab3:
+                prompt = f"""You are a business analyst. Use this summary to answer clearly with 3-5 practical recommendations.
+Revenue: £{total_revenue:,.2f}
+Orders: {total_orders}
+Average order value: £{avg_order_value:,.2f}
+Best product: {best_product}
+Lowest product: {lowest_product}
+Top category: {top_category}
+Growth: {growth_text}
+Question: {question}
+"""
+                try:
+                    with st.spinner("Analysing..."):
+                        response = client.chat.completions.create(model="gpt-4.1-mini", messages=[{"role": "user", "content": prompt}], temperature=0.4)
+                    st.markdown(f"<div class='ai-response'>{response.choices[0].message.content}</div>", unsafe_allow_html=True)
+                except Exception as e:
+                    show_error("AI service error. Check your OpenAI key or billing.", "AI", e)
+    st.markdown("---")
     st.markdown("### SHAP Explainability")
-
     if not feature_allowed("shap"):
-        st.warning("Unlock SHAP Explainability to understand the biggest drivers behind sales performance.")
+        require_upgrade("SHAP Explainability", "premium")
+    else:
+        st.info("SHAP section is unlocked. Add your SHAP model visualisation here if needed.")
+
+elif page == "Reports":
+    st.markdown("### Export Reports")
+    c1, c2, c3 = st.columns(3)
+    with c1:
+        st.download_button("Download Cleaned Data", filtered_df.to_csv(index=False).encode("utf-8"), "cleaned_sales_data.csv", "text/csv")
+    with c2:
+        st.download_button("Download Executive CSV", report_summary.to_csv(index=False).encode("utf-8"), "executive_sales_report.csv", "text/csv")
+    with c3:
+        if REPORTLAB_AVAILABLE:
+            st.download_button("Download PDF Report", make_pdf(report_summary, recommendation), "business_growth_report.pdf", "application/pdf")
+        else:
+            st.warning("PDF export unavailable. Add reportlab to requirements.txt.")
+
+elif page == "Data Preview":
+    st.markdown("### Data Preview")
+    st.dataframe(filtered_df, use_container_width=True)
+    with st.expander("Detected Column Mapping"):
+        st.write(detected_columns)
+    with st.expander("Executive Summary Table"):
+        st.dataframe(report_summary, use_container_width=True)
+
+elif page == "Pricing":
+    st.markdown("## Pricing and Upgrade")
+    st.write(f"Current plan: **{current_plan().title()}**")
+    cols = st.columns(3)
+    for col, plan in zip(cols, ["starter", "pro", "premium"]):
+        with col:
+            st.markdown(f"### {plan.title()}")
+            st.markdown(f"## {PRICING[plan]['price']}")
+            for feature in PRICING[plan]["features"]:
+                st.write(f"✓ {feature}")
+            st.markdown("---")
+            if current_plan() == plan:
+                st.success("Current plan")
+            elif plan != "starter":
+                upgrade_button(plan)
+            else:
+                st.info("Default plan")
+
+elif page == "Account":
+    st.markdown("## Account")
+    st.write(f"**Email:** {st.session_state.get('email', '')}")
+    st.write(f"**User ID:** `{st.session_state.get('user_id', '')}`")
+    st.write(f"**Current plan:** {current_plan().title()}")
+    c1, c2 = st.columns(2)
+    with c1:
+        if st.button("Refresh Plan", use_container_width=True):
+            refresh_plan()
+            st.success("Plan refreshed.")
+            st.rerun()
+    with c2:
+        if st.button("Logout / Switch Account", use_container_width=True):
+            logout()
+    st.markdown("### Upgrade")
+    if current_plan() == "starter":
+        upgrade_button("pro")
+        upgrade_button("premium")
+    elif current_plan() == "pro":
         upgrade_button("premium")
     else:
-        st.caption("This explains which factors are most important in predicting sales performance.")
-        try:
-            shap_features = ["Product", "Category", "Quantity"]
-            if "Unit_Price" in filtered_df.columns:
-                shap_features.append("Unit_Price")
-            if "Revenue" in filtered_df.columns:
-                shap_features.append("Revenue")
-
-            shap_df = filtered_df[shap_features + ["Total_Sales"]].copy()
-            encoded_df = pd.get_dummies(shap_df[shap_features], drop_first=True)
-            target = shap_df["Total_Sales"]
-
-            if len(encoded_df) >= 10 and SHAP_AVAILABLE:
-                rf_model = RandomForestRegressor(n_estimators=100, random_state=42)
-                rf_model.fit(encoded_df, target)
-                explainer = shap.TreeExplainer(rf_model)
-                shap_values = explainer.shap_values(encoded_df)
-                shap_importance = pd.DataFrame({
-                    "Feature": encoded_df.columns,
-                    "Importance": np.abs(shap_values).mean(axis=0)
-                }).sort_values("Importance", ascending=False).head(10)
-                fig = px.bar(shap_importance, x="Importance", y="Feature", orientation="h")
-                fig.update_traces(marker_color="#7c3aed")
-                fig.update_layout(height=420, template="plotly_white", xaxis_title="Average SHAP Importance", yaxis_title="")
-                fig.update_yaxes(autorange="reversed")
-                st.plotly_chart(fig, use_container_width=True)
-                top_driver = shap_importance.iloc[0]["Feature"]
-                st.success(f"Top sales driver detected: {top_driver}")
-            elif not SHAP_AVAILABLE:
-                st.warning("SHAP is not installed. Add shap to requirements.txt and redeploy.")
-            else:
-                st.info("Need at least 10 records to generate SHAP explainability.")
-        except Exception as e:
-            log_error("SHAP explainability", e)
-            st.warning("SHAP explainability could not be generated for this dataset.")
-            if st.secrets.get("DEBUG_MODE", False):
-                st.caption(f"Debug detail: {e}")
-
-    st.markdown("## AI Business Assistant")
-
-    if not feature_allowed("ai_assistant"):
-        st.warning("Unlock AI Assistant to get personalised business recommendations from your sales data.")
-        upgrade_button("pro")
-    else:
-        st.markdown("Ask a question about your business data.")
-        with st.form("ai_form"):
-            user_question = st.text_input("Question", placeholder="Example: How can I improve my sales next month?", label_visibility="collapsed")
-            ask_clicked = st.form_submit_button("Ask AI Assistant")
-
-        if ask_clicked and user_question:
-            if client is None:
-                st.error("OpenAI API key is missing. Add OPENAI_API_KEY in Streamlit Cloud secrets.")
-            else:
-                business_summary = f"""
-                Total Revenue: £{total_revenue:,.2f}
-                Total Orders: {total_orders}
-                Average Order Value: £{avg_order_value:,.2f}
-                Best Product: {best_product}
-                Lowest Product: {lowest_product}
-                Top Category: {top_category}
-                Top Growth Product: {top_growth_text}
-                Sales Growth: {growth_text}
-                Recommendation: {recommendation}
-                """
-                prompt = f"""
-                You are a professional business analyst for a small business owner.
-
-                Business summary:
-                {business_summary}
-
-                User question:
-                {user_question}
-
-                Give a clear, practical, easy-to-understand answer with 3 to 5 actionable recommendations.
-                """
-                try:
-                    with st.spinner("Analysing business data..."):
-                        response = client.chat.completions.create(
-                            model="gpt-4.1-mini",
-                            messages=[{"role": "user", "content": prompt}],
-                            temperature=0.4
-                        )
-                        answer = response.choices[0].message.content
-                    st.markdown(f"""
-                    <div class="ai-response">
-                        <strong>AI Response:</strong><br><br>
-                        {answer}
-                    </div>
-                    """, unsafe_allow_html=True)
-                except Exception as e:
-                    st.error("AI service error. Please check your OpenAI API key or billing.")
-                    log_error("AI Business Assistant", e)
-                    if st.secrets.get("DEBUG_MODE", False):
-                        st.caption(f"Debug detail: {e}")
-
-
-# =========================
-# TAB 4: REPORTS
-# =========================
-
-with tab4:
-    st.markdown("### Export Reports")
-    cleaned_csv = filtered_df.to_csv(index=False).encode("utf-8")
-    summary_csv = report_summary.to_csv(index=False).encode("utf-8")
-    d1, d2, d3 = st.columns(3)
-
-    with d1:
-        st.download_button("Download Cleaned Data", data=cleaned_csv, file_name="cleaned_sales_data.csv", mime="text/csv")
-    with d2:
-        st.download_button("Download Executive CSV", data=summary_csv, file_name="executive_sales_report.csv", mime="text/csv")
-    with d3:
-        if REPORTLAB_AVAILABLE:
-            pdf_report = generate_pdf_report(report_summary, recommendation)
-            st.download_button("Download PDF Report", data=pdf_report, file_name="business_growth_report.pdf", mime="application/pdf")
-        else:
-            st.warning("PDF export is unavailable because reportlab is not installed.")
-
-    st.markdown("### AI Executive Summary")
-
-    if not feature_allowed("ai_assistant"):
-        st.warning("AI Executive Summary is available on Pro and Premium plans.")
-        upgrade_button("pro")
-    else:
-        if st.button("Generate Executive Summary"):
-            if client is None:
-                st.error("OpenAI API key is missing. Add OPENAI_API_KEY in Streamlit Cloud secrets.")
-            else:
-                summary_prompt = f"""
-                You are a professional business analyst.
-
-                Summarise this business performance in clear, simple business language.
-
-                Total Revenue: £{total_revenue:,.2f}
-                Total Orders: {total_orders}
-                Average Order Value: £{avg_order_value:,.2f}
-                Best Product: {best_product}
-                Lowest Product: {lowest_product}
-                Top Category: {top_category}
-                Top Growth Product: {top_growth_text}
-                Sales Growth: {growth_text}
-
-                Give:
-                1. 5 key insights
-                2. 3 recommendations
-                3. 1 risk to watch
-                """
-                try:
-                    with st.spinner("Generating executive summary..."):
-                        response = client.chat.completions.create(
-                            model="gpt-4.1-mini",
-                            messages=[{"role": "user", "content": summary_prompt}],
-                            temperature=0.4
-                        )
-                    st.markdown(f"""
-                    <div class="ai-response">
-                        <strong>Executive Summary:</strong><br><br>
-                        {response.choices[0].message.content}
-                    </div>
-                    """, unsafe_allow_html=True)
-                except Exception as e:
-                    st.error("AI service error. Please check your OpenAI API key.")
-                    log_error("AI Executive Summary", e)
-                    if st.secrets.get("DEBUG_MODE", False):
-                        st.caption(f"Debug detail: {e}")
-
-
-# =========================
-# TAB 5: DATA PREVIEW
-# =========================
-
-with tab5:
-    st.markdown("""
-    <div class="tip">
-        Tip: Keep sales data updated regularly to improve forecasting, insights and AI recommendations.
-    </div>
-    """, unsafe_allow_html=True)
-
-    with st.expander("View Cleaned Data Preview"):
-        st.dataframe(filtered_df, use_container_width=True)
-
-    with st.expander("View Detected Column Mapping"):
-        st.write(detected_columns)
-
-    with st.expander("View Executive Report Summary"):
-        st.dataframe(report_summary, use_container_width=True)
+        st.success("Premium active")
