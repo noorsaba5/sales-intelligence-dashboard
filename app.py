@@ -813,8 +813,8 @@ elif page == "Account":
 
     with c1:
         if st.button("Refresh Plan", use_container_width=True):
-            refresh_plan()
-            st.success(f"Current Plan: {st.session_state.get('plan', 'starter').title()}")
+            new_plan = refresh_plan()
+            st.success(f"Current Plan: {new_plan.title()}")
 
     with c2:
         if st.button("Logout / Switch Account", use_container_width=True):
