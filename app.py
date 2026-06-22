@@ -41,7 +41,7 @@ PLAN_LIMITS = {
 
 PRICING = {
     "starter": {
-        "price": "£9/month",
+        "price": "Free",
         "features": ["Up to 500 rows", "Dashboard", "Product insights", "CSV/PDF reports"],
     },
     "pro": {
@@ -80,6 +80,21 @@ section[data-testid="stSidebar"] * { color: white !important; }
 .ai-response { background: #fbfaff; padding: 22px; border-radius: 18px; border: 1px solid #ddd6fe; margin-top: 18px; }
 .stButton button { background: linear-gradient(135deg, #6366f1, #4f46e5) !important; color: white !important; border-radius: 10px !important; font-weight: 600 !important; min-height: 42px !important; border: none !important; }
 section[data-testid="stFileUploader"] label { display: none !important; }
+/* Sidebar payment/link buttons: keep text visible and buttons clickable */
+section[data-testid="stSidebar"] div[data-testid="stLinkButton"] a {
+    background: linear-gradient(135deg, #6366f1, #4f46e5) !important;
+    color: white !important;
+    border-radius: 10px !important;
+    font-weight: 700 !important;
+    min-height: 42px !important;
+    border: 1px solid rgba(255,255,255,0.18) !important;
+    text-decoration: none !important;
+}
+section[data-testid="stSidebar"] div[data-testid="stLinkButton"] a * { color: white !important; }
+section[data-testid="stSidebar"] .stButton button {
+    background: linear-gradient(135deg, #6366f1, #4f46e5) !important;
+    color: white !important;
+}
 </style>
 """,
     unsafe_allow_html=True,
@@ -174,10 +189,15 @@ def set_login_session(user):
     st.session_state["plan"] = get_user_plan(user.id)
 
 
-def refresh_plan():
+def refresh_plan() -> str:
+    """Force-read the latest plan from Supabase and update the current Streamlit session."""
     user_id = st.session_state.get("user_id")
     if user_id:
-        st.session_state["plan"] = get_user_plan(user_id)
+        new_plan = get_user_plan(user_id)
+        st.session_state["plan"] = new_plan
+        return new_plan
+    st.session_state["plan"] = "starter"
+    return "starter"
 
 
 def logout():
@@ -192,10 +212,20 @@ def logout():
 
 
 def upgrade_button(plan_name: str):
+    """Render a Stripe Payment Link button for Pro or Premium.
+
+    Required Streamlit secrets:
+    STRIPE_PRO_LINK = "https://buy.stripe.com/..."
+    STRIPE_PREMIUM_LINK = "https://buy.stripe.com/..."
+
+    client_reference_id is added so the webhook can update the correct Supabase user.
+    """
+    plan_name = plan_name.lower().strip()
     key = f"STRIPE_{plan_name.upper()}_LINK"
     link = st.secrets.get(key, "")
+
     if not link:
-        st.info(f"{plan_name.title()} payment link not added yet.")
+        st.info(f"{plan_name.title()} payment link is missing. Add {key} to Streamlit secrets.")
         return
 
     user_id = st.session_state.get("user_id")
@@ -204,8 +234,8 @@ def upgrade_button(plan_name: str):
         return
 
     separator = "&" if "?" in link else "?"
-    link = f"{link}{separator}{urlencode({'client_reference_id': user_id})}"
-    st.link_button(f"Upgrade to {plan_name.title()}", link, use_container_width=True)
+    checkout_link = f"{link}{separator}{urlencode({'client_reference_id': user_id})}"
+    st.link_button(f"Upgrade to {plan_name.title()}", checkout_link, use_container_width=True)
 
 
 def require_upgrade(feature_title: str, plan_name: str):
@@ -324,8 +354,8 @@ with st.sidebar:
     st.markdown(f"**Plan:** {current_plan().title()}")
 
     if st.button("Refresh Plan", use_container_width=True):
-        refresh_plan()
-        st.success("Plan refreshed.")
+        new_plan = refresh_plan()
+        st.toast(f"Plan refreshed: {new_plan.title()}")
         st.rerun()
 
     st.markdown("---")
