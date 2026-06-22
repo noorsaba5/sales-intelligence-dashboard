@@ -3,21 +3,21 @@ Stripe -> Supabase plan sync webhook.
 
 Deploy this separately from Streamlit, for example on Render.
 
-Required environment variables:
+Required Render environment variables:
 - STRIPE_SECRET_KEY
 - STRIPE_WEBHOOK_SECRET
 - SUPABASE_URL
 - SUPABASE_SERVICE_ROLE_KEY
 
-Recommended Stripe setup:
-1. Use Stripe Payment Links or Checkout.
-2. Your Streamlit upgrade buttons must append client_reference_id=<supabase_user_id>.
-3. Use real Stripe Price IDs in PRICE_ID_TO_PLAN.
-4. Optional fallback: use Payment Link URLs in PAYMENT_LINK_URL_TO_PLAN.
-5. Add webhook endpoint:
-   https://sales-intelligence-webhook.onrender.com/stripe/webhook
-6. Subscribe to:
-   - checkout.session.completed
+Important:
+Your Streamlit upgrade buttons must append:
+client_reference_id=<supabase_user_id>
+
+Webhook endpoint:
+https://your-render-service.onrender.com/stripe/webhook
+
+Stripe events required:
+- checkout.session.completed
 """
 
 import os
@@ -49,28 +49,29 @@ app = FastAPI(title="Stripe Supabase Plan Webhook")
 # ============================================================
 # PLAN MAPPING
 # ============================================================
-# BEST OPTION:
-# Replace these with real Stripe Price IDs from Stripe Product Catalog.
-# They look like: price_1Txxxxx...
+# Use real Stripe Price IDs where possible.
+# Find them in Stripe Dashboard -> Products -> Product -> Pricing.
+# They start with price_
 #
-# IMPORTANT:
-# The values below are currently your Payment Link URLs, not Price IDs.
-# Because of that, keep them in PAYMENT_LINK_URL_TO_PLAN for now.
-# Later, replace PRICE_ID_TO_PLAN with real price_... IDs.
+# Your current known Pro Price ID is already added.
+# Replace YOUR_PREMIUM_PRICE_ID_HERE with the real Premium price_... ID.
 PRICE_ID_TO_PLAN = {
     "price_1TfM24J7gq8yd4kGVqZVkokN": "pro",
-     "your_premium_price_id": "premium",
+    "YOUR_PREMIUM_PRICE_ID_HERE": "premium",
 }
-    # Example:
-    # "price_123": "pro",
-    # "price_456": "premium",
 
-
-# FALLBACK OPTION:
-# This lets the webhook still work if Stripe gives us the Payment Link URL/id.
+# Optional Payment Link URL fallback.
+# This is not always enough because Stripe often sends payment_link as plink_...
 PAYMENT_LINK_URL_TO_PLAN = {
     "https://buy.stripe.com/test_6oU7sM5sucQjh152Sc4Vy02": "pro",
     "https://buy.stripe.com/test_9B6fZi8EG4jN4ej3Wg4Vy03": "premium",
+}
+
+# Practical fallback for your current test prices.
+# Amount is in pence/cents. GBP £19 = 1900, £39 = 3900.
+AMOUNT_TO_PLAN = {
+    1900: "pro",
+    3900: "premium",
 }
 
 
@@ -79,10 +80,7 @@ PAYMENT_LINK_URL_TO_PLAN = {
 # ============================================================
 
 def stripe_get(obj: Any, key: str, default: Any = None) -> Any:
-    """
-    Stripe objects are not always normal Python dicts.
-    This function safely reads values from dicts and StripeObject instances.
-    """
+    """Safely read values from dicts and StripeObject instances."""
     if obj is None:
         return default
 
@@ -143,65 +141,101 @@ def update_profile_plan(user_id: str, plan: str) -> bool:
             .eq("id", user_id)
             .execute()
         )
-        logger.info("Updated Supabase profile %s -> %s. Result: %s", user_id, plan, result)
+
+        updated_rows = result.data or []
+        logger.info("Supabase update result for user_id=%s plan=%s data=%s", user_id, plan, updated_rows)
+
+        if not updated_rows:
+            logger.warning(
+                "No Supabase profile row was updated. Check profiles.id matches client_reference_id: %s",
+                user_id,
+            )
+
         return True
+
     except Exception as exc:
         logger.exception("Failed to update Supabase profile %s -> %s: %s", user_id, plan, exc)
         return False
 
 
-def price_id_to_plan(price_id: Optional[str]) -> str:
+def price_id_to_plan(price_id: Optional[str]) -> Optional[str]:
     if not price_id:
-        return "starter"
+        return None
 
     plan = PRICE_ID_TO_PLAN.get(price_id)
     if plan:
         return normalise_plan(plan)
 
-    logger.warning("Unknown Stripe price id: %s. Falling back to starter.", price_id)
-    return "starter"
+    logger.warning("Unknown Stripe price id: %s", price_id)
+    return None
 
 
 def payment_link_to_plan(payment_link_value: Optional[str]) -> Optional[str]:
     if not payment_link_value:
         return None
 
-    # Stripe may send payment_link as plink_xxx, not the buy.stripe.com URL.
-    # URL mapping works only if the event contains the URL or you add metadata.
-    return PAYMENT_LINK_URL_TO_PLAN.get(payment_link_value)
+    plan = PAYMENT_LINK_URL_TO_PLAN.get(payment_link_value)
+    if plan:
+        return normalise_plan(plan)
+
+    logger.warning("Payment link not mapped or Stripe sent plink id instead of URL: %s", payment_link_value)
+    return None
 
 
-def plan_from_subscription(subscription: Any) -> str:
+def amount_to_plan(amount: Optional[int]) -> Optional[str]:
+    if amount is None:
+        return None
+
+    plan = AMOUNT_TO_PLAN.get(int(amount))
+    if plan:
+        return normalise_plan(plan)
+
+    logger.warning("Amount not mapped to plan: %s", amount)
+    return None
+
+
+def plan_from_subscription(subscription: Any) -> Optional[str]:
     """Find plan from a Stripe Subscription object."""
     try:
-        price_id = nested_get(subscription, ["items", "data"], default=[])
+        items = nested_get(subscription, ["items", "data"], default=[])
 
-        if price_id and isinstance(price_id, list):
-            first_item = price_id[0]
+        if items and isinstance(items, list):
+            first_item = items[0]
             actual_price_id = nested_get(first_item, ["price", "id"])
-            return price_id_to_plan(actual_price_id)
+            plan = price_id_to_plan(actual_price_id)
+            if plan:
+                return plan
 
-        return "starter"
+        return None
     except Exception as exc:
         logger.warning("Could not determine plan from subscription: %s", exc)
-        return "starter"
+        return None
 
 
 def plan_from_checkout_session(session: Any) -> str:
     """
     Find plan from a Checkout Session.
-    Works for subscription mode and Payment Link flows.
+
+    Priority:
+    1. Subscription price ID
+    2. Checkout line item price ID
+    3. Metadata plan
+    4. Payment link mapping
+    5. Amount fallback: £19 -> pro, £39 -> premium
     """
-    # 1. Best case: subscription checkout.
+
+    # 1. Subscription checkout.
     subscription_id = stripe_get(session, "subscription")
     if subscription_id:
         try:
             subscription = stripe.Subscription.retrieve(subscription_id)
-            return plan_from_subscription(subscription)
+            plan = plan_from_subscription(subscription)
+            if plan:
+                return plan
         except Exception as exc:
             logger.warning("Could not retrieve subscription %s: %s", subscription_id, exc)
 
-    # 2. Fallback: inspect Checkout Session line items.
+    # 2. Checkout Session line items.
     session_id = stripe_get(session, "id")
     if session_id:
         try:
@@ -210,27 +244,35 @@ def plan_from_checkout_session(session: Any) -> str:
 
             for item in items:
                 price_id = nested_get(item, ["price", "id"])
-                if price_id:
-                    plan = PRICE_ID_TO_PLAN.get(price_id)
-                    if plan:
-                        return normalise_plan(plan)
+                plan = price_id_to_plan(price_id)
+                if plan:
+                    return plan
 
-                    logger.warning("Line item price id not mapped: %s", price_id)
+                amount_subtotal = stripe_get(item, "amount_subtotal")
+                plan = amount_to_plan(amount_subtotal)
+                if plan:
+                    return plan
 
         except Exception as exc:
             logger.warning("Could not list line items for session %s: %s", session_id, exc)
 
-    # 3. Fallback: session metadata plan.
+    # 3. Metadata plan.
     metadata = stripe_get(session, "metadata", {}) or {}
     metadata_plan = metadata.get("plan") if isinstance(metadata, dict) else None
     if metadata_plan:
         return normalise_plan(metadata_plan)
 
-    # 4. Fallback: payment link mapping.
+    # 4. Payment link mapping.
     payment_link = stripe_get(session, "payment_link")
     mapped_payment_link_plan = payment_link_to_plan(payment_link)
     if mapped_payment_link_plan:
-        return normalise_plan(mapped_payment_link_plan)
+        return mapped_payment_link_plan
+
+    # 5. Amount fallback from Checkout Session.
+    amount_total = stripe_get(session, "amount_total")
+    mapped_amount_plan = amount_to_plan(amount_total)
+    if mapped_amount_plan:
+        return mapped_amount_plan
 
     logger.warning("Could not determine plan from checkout session. Falling back to starter.")
     return "starter"
@@ -279,28 +321,6 @@ async def stripe_webhook(request: Request):
 
         updated = update_profile_plan(user_id, plan)
         return {"status": "ok" if updated else "failed", "plan": plan, "user_id": user_id}
-
-    if event_type == "customer.subscription.updated":
-        status = stripe_get(obj, "status")
-        plan = plan_from_subscription(obj)
-
-        if status not in {"active", "trialing"}:
-            plan = "starter"
-
-        logger.info(
-            "Subscription updated. Calculated plan=%s status=%s. "
-            "Automatic user lookup requires storing stripe_customer_id in profiles.",
-            plan,
-            status,
-        )
-        return {"status": "received", "event_type": event_type}
-
-    if event_type in {"customer.subscription.deleted", "invoice.payment_failed"}:
-        logger.info(
-            "%s received. Automatic downgrade requires storing stripe_customer_id in profiles.",
-            event_type,
-        )
-        return {"status": "received", "event_type": event_type}
 
     return {"status": "ignored", "event_type": event_type}
 
