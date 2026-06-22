@@ -800,16 +800,20 @@ elif page == "Account":
     st.write(f"**Email:** {st.session_state.get('email', '')}")
     st.write(f"**User ID:** `{st.session_state.get('user_id', '')}`")
     st.write(f"**Current plan:** {current_plan().title()}")
+
     c1, c2 = st.columns(2)
+
     with c1:
         if st.button("Refresh Plan", use_container_width=True):
             refresh_plan()
-            st.success("Plan refreshed.")
-            st.rerun()
+            st.success(f"Current Plan: {st.session_state.get('plan', 'starter').title()}")
+
     with c2:
         if st.button("Logout / Switch Account", use_container_width=True):
             logout()
+
     st.markdown("### Upgrade")
+
     if current_plan() == "starter":
         upgrade_button("pro")
         upgrade_button("premium")
