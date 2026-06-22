@@ -256,7 +256,7 @@ def landing_page():
     p1, p2, p3 = st.columns(3)
     with p1:
         st.markdown("### Starter")
-        st.markdown("## £9/month")
+        st.markdown("## Free")
         st.write("Basic dashboards and reports.")
     with p2:
         st.markdown("### Pro")
