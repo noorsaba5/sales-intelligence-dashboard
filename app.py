@@ -148,13 +148,35 @@ def feature_allowed(feature: str) -> bool:
 
 
 def get_user_plan(user_id: str) -> str:
+    """Read the user's latest plan from Supabase.
+
+    Important: do not silently fall back to Starter on errors, because that
+    can make a paid user appear downgraded in the current session.
+    """
+    if not user_id:
+        return st.session_state.get("plan", "starter")
+
     try:
-        result = supabase.table("profiles").select("plan").eq("id", user_id).single().execute()
-        if result.data and result.data.get("plan"):
-            return result.data["plan"].lower()
-    except Exception:
-        pass
-    return "starter"
+        result = (
+            supabase
+            .table("profiles")
+            .select("plan")
+            .eq("id", user_id)
+            .execute()
+        )
+
+        if result.data and len(result.data) > 0:
+            plan = result.data[0].get("plan", "starter")
+            return str(plan).lower()
+
+        log_error("get_user_plan", Exception(f"No profile row found for user_id={user_id}"))
+        return st.session_state.get("plan", "starter")
+
+    except Exception as e:
+        log_error("get_user_plan", e)
+        if debug_enabled():
+            st.warning(f"Plan lookup failed: {e}")
+        return st.session_state.get("plan", "starter")
 
 
 def ensure_user_profile(user_id: str, business_name: str = "", email: str = ""):
@@ -364,7 +386,8 @@ with st.sidebar:
 
     if st.button("Refresh Plan", use_container_width=True):
         new_plan = refresh_plan()
-        st.success(f"Current Plan: {new_plan.title()}")
+        st.session_state["plan"] = new_plan
+        st.rerun()
 
     st.markdown("---")
     page = st.radio(
@@ -814,7 +837,8 @@ elif page == "Account":
     with c1:
         if st.button("Refresh Plan", use_container_width=True):
             new_plan = refresh_plan()
-            st.success(f"Current Plan: {new_plan.title()}")
+            st.session_state["plan"] = new_plan
+            st.rerun()
 
     with c2:
         if st.button("Logout / Switch Account", use_container_width=True):
