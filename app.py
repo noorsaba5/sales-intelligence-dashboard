@@ -363,9 +363,8 @@ with st.sidebar:
     st.markdown(f"**Plan:** {current_plan().title()}")
 
     if st.button("Refresh Plan", use_container_width=True):
-    new_plan = refresh_plan()
-    st.success(f"Current Plan: {new_plan.title()}")
-    
+        new_plan = refresh_plan()
+        st.success(f"Current Plan: {new_plan.title()}")
 
     st.markdown("---")
     page = st.radio(
