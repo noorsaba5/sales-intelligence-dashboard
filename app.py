@@ -191,14 +191,23 @@ def set_login_session(user):
 
 def refresh_plan() -> str:
     """Force-read the latest plan from Supabase and update the current Streamlit session."""
-    user_id = st.session_state.get("user_id")
-    if user_id:
-        new_plan = get_user_plan(user_id)
-        st.session_state["plan"] = new_plan
-        return new_plan
-    st.session_state["plan"] = "starter"
-    return "starter"
 
+    user_id = st.session_state.get("user_id")
+
+    if not user_id:
+        return st.session_state.get("plan", "starter")
+
+    try:
+        new_plan = get_user_plan(user_id)
+
+        if new_plan:
+            st.session_state["plan"] = new_plan
+            return new_plan
+
+    except Exception as e:
+        st.error(f"Failed to refresh plan: {e}")
+
+    return st.session_state.get("plan", "starter")
 
 def logout():
     try:
@@ -354,9 +363,9 @@ with st.sidebar:
     st.markdown(f"**Plan:** {current_plan().title()}")
 
     if st.button("Refresh Plan", use_container_width=True):
-        new_plan = refresh_plan()
-        st.toast(f"Plan refreshed: {new_plan.title()}")
-        st.rerun()
+    new_plan = refresh_plan()
+    st.success(f"Current Plan: {new_plan.title()}")
+    
 
     st.markdown("---")
     page = st.radio(

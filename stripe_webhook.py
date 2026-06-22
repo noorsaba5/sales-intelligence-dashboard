@@ -57,7 +57,7 @@ app = FastAPI(title="Stripe Supabase Plan Webhook")
 # Replace YOUR_PREMIUM_PRICE_ID_HERE with the real Premium price_... ID.
 PRICE_ID_TO_PLAN = {
     "price_1TfM24J7gq8yd4kGVqZVkokN": "pro",
-    "YOUR_PREMIUM_PRICE_ID_HERE": "premium",
+    "https://buy.stripe.com/test_9B6fZi8EG4jN4ej3Wg4Vy03": "premium",
 }
 
 # Optional Payment Link URL fallback.
